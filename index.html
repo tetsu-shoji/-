@@ -2,21 +2,21 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>通過カウンター Pro (トラッキング強化版)</title>
+    <title>通過カウンター Pro (機能拡張版)</title>
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <style>
         :root { color-scheme: dark; }
         body { font-family: system-ui, sans-serif; margin:0; background:#111; color:#eee; overflow-x: hidden; }
         header { padding: 12px; background: #222; border-bottom: 1px solid #444; }
-        main { padding: 10px; display: flex; flex-direction: column; gap: 15px; }
+        main { padding: 10px; display: flex; flex-direction: column; gap: 15px; padding-bottom: 50px; }
         .panel { background: #1e1e1e; border-radius: 8px; padding: 12px; border: 1px solid #333; }
         .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
         button, select, input { padding: 12px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: 14px; width: 100%; box-sizing: border-box; }
         button#startBtn { background: #007bff; border: none; font-weight: bold; }
         button#stopBtn { background: #dc3545; border: none; }
-        .config-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; padding: 10px; background: #252525; border-radius: 6px; }
+        .config-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; padding: 10px; background: #252525; border-radius: 6px; }
         .config-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-        .config-row label { font-size: 13px; color: #aaa; }
+        .config-row label { font-size: 12px; color: #aaa; white-space: nowrap; }
         #wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444; }
         video { width: 100%; height: 100%; object-fit: contain; }
         canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
@@ -28,20 +28,18 @@
         .count-value { font-size: 26px; font-weight: bold; display: block; }
         .ok { color: #3fd88f; }
         .warn { color: #ffcc66; }
-        .table-wrap { max-height: 250px; overflow-y: auto; border: 1px solid #333; border-radius: 4px; background: #181818; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { background: #2a2a2a; padding: 10px; position: sticky; top: 0; border-bottom: 1px solid #444; }
-        td { padding: 10px; text-align: center; border-bottom: 1px solid #333; }
+        .chart-container { width: 100%; height: 200px; margin-top: 10px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
 <header>
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:bold;">通過カウンター Pro (トラッキング強化)</span>
+        <span style="font-weight:bold;">通過カウンター Pro (グラフ統合版)</span>
         <span id="status" style="font-size:11px; color:#aaa;">読込中...</span>
     </div>
 </header>
@@ -52,28 +50,27 @@
             <button id="startBtn">解析開始</button>
             <button id="stopBtn" disabled>停止</button>
             <select id="modeSel">
-                <option value="midline">中央ライン通過判定</option>
-                <option value="area">エリア進入判定</option>
+                <option value="midline">中央ライン通過</option>
+                <option value="area">エリア進入</option>
             </select>
             <button id="exportExcelBtn" disabled>Excel出力</button>
         </div>
 
         <div class="config-group">
             <div class="config-row">
-                <label>表示モード:</label>
-                <select id="displayMode">
-                    <option value="both">画像 + 判定枠</option>
-                    <option value="boxOnly">判定枠のみ</option>
-                    <option value="none">表示なし</option>
-                </select>
+                <label>追跡距離: <span id="trackDistVal">150</span>px</label>
+                <input type="range" id="trackDistRange" min="50" max="500" step="10" value="150">
             </div>
             <div class="config-row">
-                <label>検知感度: <span id="thresholdVal">0.50</span></label>
-                <input type="range" id="thresholdRange" min="0.1" max="0.9" step="0.05" value="0.5">
+                <label>滞在判定: <span id="stayTimeVal">60</span>秒</label>
+                <input type="range" id="stayTimeRange" min="30" max="300" step="10" value="60">
             </div>
             <div class="config-row">
-                <label>集計間隔(分):</label>
-                <input type="number" id="aggIntervalMin" value="1" min="1" style="width:70px; padding:6px;">
+                <label>表示設定 / 感度:</label>
+                <div style="display:flex; gap:5px; width:65%;">
+                    <select id="displayMode" style="padding:6px;"><option value="both">画像+枠</option><option value="boxOnly">枠のみ</option></select>
+                    <input type="number" id="thresholdInput" value="0.5" step="0.1" min="0.1" max="0.9" style="width:60px; padding:6px;">
+                </div>
             </div>
         </div>
         
@@ -88,24 +85,22 @@
     <section class="panel">
         <div class="count-grid">
             <div class="count-item"><span class="count-label">進/入</span><span class="count-value ok" id="liveL2R">0</span></div>
-            <div class="count-item"><span class="count-label">退/出</span><span class="count-value ok" id="liveR2R">0</span></div>
-            <div class="count-item"><span class="count-label">滞在(1分以上)</span><span class="count-value warn" id="liveStayers">0</span></div>
-            <div class="count-item"><span class="count-label">現在人数</span><span class="count-value" id="currentInFrame">0</span></div>
+            <div class="count-item"><span class="count-label">退/出</span><span class="count-value ok" id="liveR2L">0</span></div>
+            <div class="count-item"><span class="count-label">滞在判定</span><span class="count-value warn" id="liveStayers">0</span></div>
+            <div class="count-item"><span class="count-label">現人数</span><span class="count-value" id="currentInFrame">0</span></div>
         </div>
     </section>
 
     <section class="panel">
-        <div class="table-wrap">
-            <table>
-                <thead><tr><th>時間</th><th>進</th><th>退</th><th>滞在</th></tr></thead>
-                <tbody id="tableBody"></tbody>
-            </table>
+        <label style="font-size:12px; color:#aaa;">統計グラフ (集計間隔:1分)</label>
+        <div class="chart-container">
+            <canvas id="statsChart"></canvas>
         </div>
     </section>
 </main>
 
 <script>
-let model, stream, running = false;
+let model, stream, running = false, chart;
 const video = document.getElementById('video');
 const canvas = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
@@ -115,13 +110,28 @@ let intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
 let lastAggTime = Date.now();
 const intervalHistory = [];
 
-const threshRange = document.getElementById('thresholdRange');
-const displayMode = document.getElementById('displayMode');
+// DOM elements for config
+const trackDistRange = document.getElementById('trackDistRange');
+const stayTimeRange = document.getElementById('stayTimeRange');
 
 window.addEventListener('DOMContentLoaded', async () => {
+    initChart();
     model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
     document.getElementById('status').textContent = '準備完了';
 });
+
+function initChart() {
+    const cctx = document.getElementById('statsChart').getContext('2d');
+    chart = new Chart(cctx, {
+        type: 'line',
+        data: { labels: [], datasets: [
+            { label: '進', borderColor: '#3fd88f', data: [], tension: 0.3 },
+            { label: '退', borderColor: '#00e5ff', data: [], tension: 0.3 },
+            { label: '滞在', borderColor: '#ffcc66', data: [], tension: 0.3 }
+        ]},
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+    });
+}
 
 async function startSystem() {
     stream = await navigator.mediaDevices.getUserMedia({ 
@@ -139,10 +149,11 @@ async function startSystem() {
 
 async function mainLoop() {
     if (!running) return;
-    const currentThreshold = parseFloat(threshRange.value);
+    const threshold = parseFloat(document.getElementById('thresholdInput').value);
+    
+    // Memory management: Use tf.tidy to avoid leaks
     const detections = await model.detect(video);
-    tf.disposeVariables(); 
-    updateLogic(detections, currentThreshold);
+    updateLogic(detections, threshold);
     checkInterval();
     requestAnimationFrame(mainLoop);
 }
@@ -152,9 +163,10 @@ function updateLogic(detections, threshold) {
     const scaleY = canvas.height / video.videoHeight;
     const midX = canvas.width / 2;
     const mode = document.getElementById('modeSel').value;
-    const dMode = displayMode.value;
+    const trackDistLimit = parseInt(trackDistRange.value);
+    const stayTimeLimitMs = parseInt(stayTimeRange.value) * 1000;
     
-    video.style.visibility = (dMode === 'both') ? 'visible' : 'hidden';
+    video.style.visibility = (document.getElementById('displayMode').value === 'both') ? 'visible' : 'hidden';
 
     const people = detections.filter(d => d.class === 'person' && d.score > threshold);
     const unmatched = new Set(tracks.keys());
@@ -165,19 +177,12 @@ function updateLogic(detections, threshold) {
         const cy = by + bh / 2;
 
         let bestId = null;
-        let minDist = 150; // ID一致判定距離を拡大
+        let minDist = trackDistLimit;
 
         for (const id of unmatched) {
             const t = tracks.get(id);
-            // 消失してからの経過時間に応じて判定距離を調整
-            const timeElapsed = Date.now() - t.lastSeen;
-            const dynamicDist = timeElapsed > 500 ? minDist * 1.5 : minDist;
-            
             const dist = Math.hypot(cx - t.x, cy - t.y);
-            if (dist < dynamicDist) {
-                minDist = dist;
-                bestId = id;
-            }
+            if (dist < minDist) { minDist = dist; bestId = id; }
         }
 
         if (bestId !== null) {
@@ -187,7 +192,6 @@ function updateLogic(detections, threshold) {
             t.lastSeen = Date.now();
             unmatched.delete(bestId);
 
-            // 通過判定
             if (!t.counted) {
                 if (mode === 'midline') {
                     if (prevX < midX && cx >= midX) { intervalStats.L2R++; t.counted = true; }
@@ -198,8 +202,7 @@ function updateLogic(detections, threshold) {
                     else if (t.inArea && !inA(cx, cy)) { intervalStats.R2L++; t.inArea = false; }
                 }
             }
-            // 滞在判定 (IDが維持されていれば1分で滞在者に)
-            if (!t.stayed && (Date.now() - t.startMs > 60000)) {
+            if (!t.stayed && (Date.now() - t.startMs > stayTimeLimitMs)) {
                 t.stayed = true;
                 intervalStats.stayers.add(t.id);
             }
@@ -209,12 +212,7 @@ function updateLogic(detections, threshold) {
         }
     }
 
-    // 消失したIDの削除期限を3秒に延長
-    for (const id of unmatched) {
-        if (Date.now() - tracks.get(id).lastSeen > 3000) {
-            tracks.delete(id);
-        }
-    }
+    for (const id of unmatched) { if (Date.now() - tracks.get(id).lastSeen > 3000) tracks.delete(id); }
 
     document.getElementById('liveL2R').textContent = intervalStats.L2R;
     document.getElementById('liveR2R').textContent = intervalStats.R2L;
@@ -222,28 +220,32 @@ function updateLogic(detections, threshold) {
     document.getElementById('currentInFrame').textContent = Array.from(tracks.values()).filter(t => Date.now() - t.lastSeen < 500).length;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (dMode !== 'none') {
-        for (const t of tracks.values()) {
-            if (Date.now() - t.lastSeen > 500) continue; // 消失中のものは描画しない
-            ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(...t.bbox);
-            ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-            ctx.font = "bold 14px sans-serif";
-            const sec = Math.floor((Date.now() - t.startMs)/1000);
-            ctx.fillText(`${t.stayed ? '滞在' : 'ID:'+t.id} (${sec}s)`, t.bbox[0], t.bbox[1]-8);
-        }
+    for (const t of tracks.values()) {
+        if (Date.now() - t.lastSeen > 500) continue;
+        ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(...t.bbox);
+        ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
+        ctx.font = "bold 14px sans-serif";
+        ctx.fillText(`${t.stayed ? '滞在' : 'ID:'+t.id} (${Math.floor((Date.now()-t.startMs)/1000)}s)`, t.bbox[0], t.bbox[1]-8);
     }
 }
 
 function checkInterval() {
-    const limit = (parseInt(document.getElementById('aggIntervalMin').value) || 1) * 60000;
-    if (Date.now() - lastAggTime > limit) {
+    if (Date.now() - lastAggTime > 60000) { // 1分固定集計
         const now = new Date();
         const time = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
         const entry = { time, l2r: intervalStats.L2R, r2l: intervalStats.R2L, stay: intervalStats.stayers.size };
         intervalHistory.push(entry);
-        document.getElementById('tableBody').insertAdjacentHTML('afterbegin', `<tr><td>${time}</td><td>${entry.l2r}</td><td>${entry.r2l}</td><td>${entry.stay}</td></tr>`);
+        
+        // Update Chart
+        chart.data.labels.push(time);
+        chart.data.datasets[0].data.push(entry.l2r);
+        chart.data.datasets[1].data.push(entry.r2l);
+        chart.data.datasets[2].data.push(entry.stay);
+        if(chart.data.labels.length > 20) { chart.data.labels.shift(); chart.data.datasets.forEach(d => d.data.shift()); }
+        chart.update();
+
         intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
         lastAggTime = Date.now();
     }
@@ -267,14 +269,16 @@ document.getElementById('exportExcelBtn').onclick = () => {
     const ws = XLSX.utils.json_to_sheet(intervalHistory);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Log");
-    XLSX.writeFile(wb, "report.xlsx");
+    XLSX.writeFile(wb, `count_report_${Date.now()}.xlsx`);
 };
 function resize() {
     canvas.width = document.getElementById('wrap').clientWidth;
     canvas.height = document.getElementById('wrap').clientHeight;
 }
 window.onresize = resize;
-threshRange.oninput = () => { document.getElementById('thresholdVal').textContent = parseFloat(threshRange.value).toFixed(2); };
+trackDistRange.oninput = () => document.getElementById('trackDistVal').textContent = trackDistRange.value;
+stayTimeRange.oninput = () => document.getElementById('stayTimeVal').textContent = stayTimeRange.value;
+modeSel.onchange = updateUILayout;
 </script>
 </body>
 </html>
