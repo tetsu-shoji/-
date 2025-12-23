@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>人物通過カウンター Pro (機能復元版)</title>
+    <title>人物通過カウンター Pro (感度調整版)</title>
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <style>
         :root { color-scheme: dark; }
@@ -16,7 +16,11 @@
         button, select, input { padding: 12px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: 14px; width: 100%; box-sizing: border-box; }
         button#startBtn { background: #007bff; border: none; font-weight: bold; }
         button#stopBtn { background: #dc3545; border: none; }
-        .config-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        
+        .config-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; padding: 10px; background: #252525; border-radius: 6px; }
+        .config-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .config-row label { font-size: 13px; color: #aaa; white-space: nowrap; }
+        .config-row input[type="range"] { flex: 1; height: 8px; }
 
         /* 映像エリア */
         #wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444; }
@@ -33,12 +37,10 @@
         .ok { color: #3fd88f; }
         .warn { color: #ffcc66; }
 
-        /* 履歴テーブル */
         .table-wrap { max-height: 250px; overflow-y: auto; border: 1px solid #333; border-radius: 4px; background: #181818; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th { background: #2a2a2a; padding: 10px; position: sticky; top: 0; border-bottom: 1px solid #444; }
         td { padding: 10px; text-align: center; border-bottom: 1px solid #333; }
-        
         .status-footer { font-size: 12px; color: #9fd; text-align: center; margin-top: 5px; font-family: monospace; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
@@ -65,9 +67,16 @@
             </select>
             <button id="exportExcelBtn" disabled>Excel出力</button>
         </div>
-        <div class="config-row">
-            <label style="font-size:13px;">集計間隔(分):</label>
-            <input type="number" id="aggIntervalMin" value="1" min="1" max="60" style="width:80px;">
+
+        <div class="config-group">
+            <div class="config-row">
+                <label>検知感度(しきい値): <span id="thresholdVal">0.50</span></label>
+                <input type="range" id="thresholdRange" min="0.1" max="0.9" step="0.05" value="0.5">
+            </div>
+            <div class="config-row">
+                <label>集計間隔(分):</label>
+                <input type="number" id="aggIntervalMin" value="1" min="1" max="60" style="width:70px; padding:6px;">
+            </div>
         </div>
         
         <div id="wrap">
@@ -76,32 +85,19 @@
             <div id="midline" class="line"></div>
             <div id="areaBox" class="area-box"></div>
         </div>
-        <div id="diag" class="status-footer">システム準備中...</div>
+        <div id="diag" class="status-footer">モデル準備中...</div>
     </section>
 
     <section class="panel">
         <div class="count-grid">
-            <div class="count-item">
-                <span class="count-label">左→右 / 進入</span>
-                <span class="count-value ok" id="liveL2R">0</span>
-            </div>
-            <div class="count-item">
-                <span class="count-label">右→左 / 退出</span>
-                <span class="count-value ok" id="liveR2L">0</span>
-            </div>
-            <div class="count-item">
-                <span class="count-label">滞在(1分以上)</span>
-                <span class="count-value warn" id="liveStayers">0</span>
-            </div>
-            <div class="count-item">
-                <span class="count-label">画面内の人数</span>
-                <span class="count-value" id="currentInFrame">0</span>
-            </div>
+            <div class="count-item"><span class="count-label">左→右 / 進入</span><span class="count-value ok" id="liveL2R">0</span></div>
+            <div class="count-item"><span class="count-label">右→左 / 退出</span><span class="count-value ok" id="liveR2L">0</span></div>
+            <div class="count-item"><span class="count-label">滞在(1分以上)</span><span class="count-value warn" id="liveStayers">0</span></div>
+            <div class="count-item"><span class="count-label">画面内の人数</span><span class="count-value" id="currentInFrame">0</span></div>
         </div>
     </section>
 
     <section class="panel">
-        <h3 style="margin:0 0 10px 0; font-size:14px; color:#aaa;">履歴ログ</h3>
         <div class="table-wrap">
             <table>
                 <thead><tr><th>時間</th><th>進</th><th>退</th><th>滞在</th></tr></thead>
@@ -116,20 +112,22 @@ let model, stream, running = false;
 const video = document.getElementById('video');
 const canvas = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
-const midline = document.getElementById('midline');
-const areaBox = document.getElementById('areaBox');
-
-let nextId = 1;
 const tracks = new Map();
-let aggregatorTimer = null;
+let nextId = 1;
 let intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
+let lastAggTime = Date.now();
 const intervalHistory = [];
+
+// しきい値のリアルタイム表示更新
+const threshRange = document.getElementById('thresholdRange');
+const threshVal = document.getElementById('thresholdVal');
+threshRange.oninput = () => { threshVal.textContent = parseFloat(threshRange.value).toFixed(2); };
 
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
         document.getElementById('status').textContent = '準備完了';
-        document.getElementById('diag').textContent = '「開始」で解析をスタート';
+        document.getElementById('diag').textContent = '「開始」を押して解析をスタート';
     } catch(e) {
         document.getElementById('diag').textContent = 'エラー: ' + e.message;
     }
@@ -138,160 +136,151 @@ window.addEventListener('DOMContentLoaded', async () => {
 async function startSystem() {
     try {
         stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment", width: 640 }, audio: false 
+            video: { facingMode: "environment", width: { ideal: 640 } }, audio: false 
         });
         video.srcObject = stream;
+        video.onloadedmetadata = () => { resize(); updateModeUI(); };
         await video.play();
         running = true;
-        updateUI();
-        resize();
-        startLoop();
-        resetAggregator();
+        lastAggTime = Date.now();
+        requestAnimationFrame(mainLoop);
         document.getElementById('startBtn').disabled = true;
         document.getElementById('stopBtn').disabled = false;
         document.getElementById('exportExcelBtn').disabled = false;
         document.getElementById('diag').textContent = '解析中...';
     } catch (e) {
-        alert("カメラの起動に失敗しました");
+        alert("カメラ起動失敗");
     }
 }
 
-function updateTracks(detections) {
+async function mainLoop() {
+    if (!running) return;
+    
+    // スライダーから現在のしきい値を取得
+    const currentThreshold = parseFloat(threshRange.value);
+    
+    const detections = await model.detect(video);
+    tf.disposeVariables(); 
+
+    updateLogic(detections, currentThreshold);
+    checkInterval();
+    requestAnimationFrame(mainLoop);
+}
+
+function updateLogic(detections, threshold) {
     const scaleX = canvas.width / video.videoWidth;
     const scaleY = canvas.height / video.videoHeight;
-    const currentDets = detections.filter(d => d.class === 'person' && d.score > 0.55)
-        .map(d => ({
-            cx: (d.bbox[0] + d.bbox[2]/2) * scaleX,
-            cy: (d.bbox[1] + d.bbox[3]/2) * scaleY,
-            bbox: [d.bbox[0]*scaleX, d.bbox[1]*scaleY, d.bbox[2]*scaleX, d.bbox[3]*scaleY]
-        }));
+    const midX = canvas.width / 2;
+    const mode = document.getElementById('modeSel').value;
+    
+    // 設定されたしきい値でフィルタリング
+    const people = detections.filter(d => d.class === 'person' && d.score > threshold);
+    const unmatched = new Set(tracks.keys());
 
-    const unmatchedTracks = new Set(tracks.keys());
-    for (const det of currentDets) {
-        let bestId = null; let minExpDist = 4000;
-        for (const id of unmatchedTracks) {
+    for (const d of people) {
+        const [bx, by, bw, bh] = d.bbox.map((v, i) => i % 2 === 0 ? v * scaleX : v * scaleY);
+        const cx = bx + bw / 2;
+        const cy = by + bh / 2;
+
+        let bestId = null;
+        let minDist = 80;
+
+        for (const id of unmatched) {
             const t = tracks.get(id);
-            const last = t.path[t.path.length - 1];
-            const dist = Math.pow(det.cx - last.cx, 2) + Math.pow(det.cy - last.cy, 2);
-            if (dist < minExpDist) { minExpDist = dist; bestId = id; }
+            const dist = Math.hypot(cx - t.x, cy - t.y);
+            if (dist < minDist) { minDist = dist; bestId = id; }
         }
+
         if (bestId !== null) {
             const t = tracks.get(bestId);
-            t.path.push({ cx: det.cx, cy: det.cy });
-            t.lastBbox = det.bbox;
-            if(t.path.length > 10) t.path.shift();
+            const prevX = t.x;
+            t.x = cx; t.y = cy; t.bbox = [bx, by, bw, bh];
             t.lastSeen = Date.now();
-            unmatchedTracks.delete(bestId);
-            processCounting(t);
+            unmatched.delete(bestId);
+
+            if (!t.counted) {
+                if (mode === 'midline') {
+                    if (prevX < midX && cx >= midX) { intervalStats.L2R++; t.counted = true; }
+                    else if (prevX > midX && cx <= midX) { intervalStats.R2L++; t.counted = true; }
+                } else {
+                    const inA = (px, py) => (px > canvas.width*0.3 && px < canvas.width*0.7 && py > canvas.height*0.3 && py < canvas.height*0.7);
+                    if (!t.inArea && inA(cx, cy)) { intervalStats.L2R++; t.inArea = true; }
+                    else if (t.inArea && !inA(cx, cy)) { intervalStats.R2L++; t.inArea = false; }
+                }
+            }
+            if (!t.stayed && (Date.now() - t.startMs > 60000)) { t.stayed = true; intervalStats.stayers.add(t.id); }
         } else {
-            const newId = nextId++;
-            tracks.set(newId, {
-                id: newId, path: [{ cx: det.cx, cy: det.cy }],
-                lastBbox: det.bbox, startMs: Date.now(), lastSeen: Date.now(),
-                counted: false, stayed: false, inArea: false
-            });
+            const id = nextId++;
+            tracks.set(id, { id, x: cx, y: cy, bbox: [bx, by, bw, bh], startMs: Date.now(), lastSeen: Date.now(), counted: false, stayed: false, inArea: false });
         }
     }
-    for (const id of unmatchedTracks) { if (Date.now() - tracks.get(id).lastSeen > 1000) tracks.delete(id); }
-}
 
-function processCounting(t) {
-    if (t.counted) return;
-    const mode = document.getElementById('modeSel').value;
-    const curr = t.path[t.path.length - 1];
-    const prev = t.path[t.path.length - 2] || curr;
+    for (const id of unmatched) { if (Date.now() - tracks.get(id).lastSeen > 1200) tracks.delete(id); }
 
-    if (mode === 'midline') {
-        const midX = canvas.width / 2;
-        if (prev.cx < midX && curr.cx >= midX) { intervalStats.L2R++; t.counted = true; }
-        else if (prev.cx > midX && curr.cx <= midX) { intervalStats.R2L++; t.counted = true; }
-    } else {
-        const ax1 = canvas.width * 0.3, ax2 = canvas.width * 0.7;
-        const ay1 = canvas.height * 0.3, ay2 = canvas.height * 0.7;
-        const isInside = (p) => (p.cx > ax1 && p.cx < ax2 && p.cy > ay1 && p.cy < ay2);
-        if (!t.inArea && isInside(curr)) { intervalStats.L2R++; t.inArea = true; }
-        else if (t.inArea && !isInside(curr)) { intervalStats.R2L++; t.inArea = false; }
-    }
-    if (!t.stayed && (Date.now() - t.startMs > 60000)) { t.stayed = true; intervalStats.stayers.add(t.id); }
-}
-
-async function startLoop() {
-    if (!running) return;
-    const detections = await tf.tidy(() => model.detect(video));
-    updateTracks(detections);
-    drawOverlay();
-    
+    // UI更新
     document.getElementById('liveL2R').textContent = intervalStats.L2R;
     document.getElementById('liveR2L').textContent = intervalStats.R2L;
     document.getElementById('liveStayers').textContent = intervalStats.stayers.size;
     document.getElementById('currentInFrame').textContent = tracks.size;
-    
-    requestAnimationFrame(startLoop);
-}
 
-function resetAggregator() {
-    if (aggregatorTimer) clearTimeout(aggregatorTimer);
-    const mins = parseInt(document.getElementById('aggIntervalMin').value) || 1;
-    aggregatorTimer = setTimeout(finishInterval, mins * 60000);
-}
-
-function finishInterval() {
-    const now = new Date();
-    const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
-    const entry = { time: timeStr, l2r: intervalStats.L2R, r2l: intervalStats.R2L, stayers: intervalStats.stayers.size };
-    intervalHistory.push(entry);
-    updateTable(entry);
-    intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
-    resetAggregator();
-}
-
-function updateTable(e) {
-    const row = `<tr><td>${e.time}</td><td>${e.l2r}</td><td>${e.r2l}</td><td>${e.stayers}</td></tr>`;
-    document.getElementById('tableBody').insertAdjacentHTML('afterbegin', row);
-}
-
-function drawOverlay() {
+    // 描画
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (const t of tracks.values()) {
-        ctx.lineWidth = 2;
         ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-        ctx.strokeRect(...t.lastBbox);
-        
+        ctx.lineWidth = 2;
+        ctx.strokeRect(...t.bbox);
         ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-        ctx.font = "12px sans-serif";
-        const label = t.stayed ? `Stayed: ${Math.floor((Date.now()-t.startMs)/1000)}s` : "Tracking";
-        ctx.fillText(label, t.lastBbox[0], t.lastBbox[1] - 5);
+        ctx.font = "bold 12px sans-serif";
+        ctx.fillText(t.stayed ? "滞在者" : "ID:"+t.id, t.bbox[0], t.bbox[1]-5);
     }
 }
 
-function updateUI() {
-    const mode = document.getElementById('modeSel').value;
-    midline.style.display = (mode === 'midline') ? 'block' : 'none';
-    midline.style.left = '50%';
-    areaBox.style.display = (mode === 'area') ? 'block' : 'none';
-    areaBox.style.left = '30%'; areaBox.style.top = '30%'; areaBox.style.width = '40%'; areaBox.style.height = '40%';
+function checkInterval() {
+    const limit = (parseInt(document.getElementById('aggIntervalMin').value) || 1) * 60000;
+    if (Date.now() - lastAggTime > limit) {
+        const now = new Date();
+        const time = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
+        const entry = { time, l2r: intervalStats.L2R, r2l: intervalStats.R2L, stay: intervalStats.stayers.size };
+        intervalHistory.push(entry);
+        
+        const row = `<tr><td>${time}</td><td>${entry.l2r}</td><td>${entry.r2l}</td><td>${entry.stay}</td></tr>`;
+        document.getElementById('tableBody').insertAdjacentHTML('afterbegin', row);
+        
+        intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
+        lastAggTime = Date.now();
+    }
 }
 
-document.getElementById('startBtn').addEventListener('click', startSystem);
-document.getElementById('stopBtn').addEventListener('click', () => { 
-    running = false; if(stream) stream.getTracks().forEach(t => t.stop());
+function updateModeUI() {
+    const mode = document.getElementById('modeSel').value;
+    document.getElementById('midline').style.display = (mode === 'midline') ? 'block' : 'none';
+    document.getElementById('midline').style.left = '50%';
+    const ab = document.getElementById('areaBox');
+    ab.style.display = (mode === 'area') ? 'block' : 'none';
+    ab.style.left = '30%'; ab.style.top = '30%'; ab.style.width = '40%'; ab.style.height = '40%';
+}
+
+document.getElementById('modeSel').onchange = updateModeUI;
+document.getElementById('startBtn').onclick = startSystem;
+document.getElementById('stopBtn').onclick = () => {
+    running = false;
+    if(stream) stream.getTracks().forEach(t => t.stop());
     document.getElementById('startBtn').disabled = false;
     document.getElementById('stopBtn').disabled = true;
-});
-document.getElementById('modeSel').addEventListener('change', updateUI);
-document.getElementById('exportExcelBtn').addEventListener('click', () => {
-    const wb = XLSX.utils.book_new();
+};
+document.getElementById('exportExcelBtn').onclick = () => {
     const ws = XLSX.utils.json_to_sheet(intervalHistory);
-    XLSX.utils.book_append_sheet(wb, ws, "Log");
-    XLSX.writeFile(wb, `count_report.xlsx`);
-});
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CountLog");
+    XLSX.writeFile(wb, "person_count_report.xlsx");
+};
+
 function resize() {
-    canvas.width = document.getElementById('wrap').clientWidth;
-    canvas.height = document.getElementById('wrap').clientHeight;
-    updateUI();
+    const w = document.getElementById('wrap');
+    canvas.width = w.clientWidth;
+    canvas.height = w.clientHeight;
 }
-window.addEventListener('resize', resize);
+window.onresize = resize;
 </script>
 </body>
 </html>
-
