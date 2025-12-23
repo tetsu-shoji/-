@@ -12,8 +12,9 @@
         main { display:grid; grid-template-columns: 720px 1fr; gap:16px; padding:16px; }
         .panel { padding:16px; background:#1e1e1e; border-radius:8px; margin-bottom:16px; display: flex; flex-direction: column; }
         
-        /* 右側パネルのレイアウト調整 */
-        .history-panel { height: calc(100vh - 120px); min-height: 650px; }
+        /* パネル高さ調整 */
+        .left-panel { flex: 0 0 auto; }
+        .right-panel { height: calc(100vh - 120px); min-height: 700px; }
         
         .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
         button, select, input { padding:8px 12px; border-radius:6px; border:1px solid #555; background:#2a2a2a; color:#eee; cursor:pointer; font-size: 14px; }
@@ -29,28 +30,14 @@
         .line { position:absolute; top:0; width:2px; background:rgba(0,229,255,0.8); z-index:3; display:none; }
         .area-box { position:absolute; border:2px dashed rgba(255,204,102,0.6); z-index:3; display:none; pointer-events:none; }
         
-        /* カウンター表示 */
+        /* カウンター表示 (左パネル内) */
         .count-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; margin-top: 15px; }
         .count-item { background: #252525; padding: 10px; border-radius: 6px; }
         .count { font-size: 28px; font-weight: 700; display: block; }
         .ok { color:#3fd88f; }
         .warn { color:#ffcc66; }
         
-        /* 履歴・グラフエリアの修正 */
-        .table-container { 
-            flex: 1; 
-            min-height: 150px; 
-            max-height: 350px; 
-            overflow-y: auto; 
-            border: 1px solid #333; 
-            border-radius: 4px; 
-            margin-bottom: 20px; 
-            background: #181818;
-        }
-        table { width:100%; border-collapse: collapse; font-size:13px; }
-        th { position: sticky; top: 0; background: #2a2a2a; padding: 10px; z-index: 5; }
-        td { border-bottom: 1px solid #333; padding: 8px; text-align: center; }
-        
+        /* 右側：グラフエリア (上部配置) */
         #chartContainer { 
             height: 250px; 
             width: 100%; 
@@ -58,15 +45,28 @@
             padding: 10px; 
             border-radius: 8px; 
             box-sizing: border-box; 
-            margin-top: auto; 
+            margin-bottom: 20px;
         }
+        
+        /* 右側：テーブルエリア (下部配置・スクロール) */
+        .table-container { 
+            flex: 1; 
+            min-height: 200px; 
+            overflow-y: auto; 
+            border: 1px solid #333; 
+            border-radius: 4px; 
+            background: #181818;
+        }
+        table { width:100%; border-collapse: collapse; font-size:13px; }
+        th { position: sticky; top: 0; background: #2a2a2a; padding: 10px; z-index: 5; border-bottom: 2px solid #444; }
+        td { border-bottom: 1px solid #333; padding: 8px; text-align: center; }
         
         .diag { font-size:12px; color:#9fd; margin-top:12px; font-family: monospace; }
 
         @media (max-width: 1150px) { 
             main { grid-template-columns: 1fr; } 
             #wrap { width: 100%; height: auto; aspect-ratio: 16/9; } 
-            .history-panel { height: auto; min-height: auto; }
+            .right-panel { height: auto; }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
@@ -80,12 +80,12 @@
     <div style="font-weight:bold; font-size:1.2em;">人物通過・滞在カウンター Pro</div>
     <div id="status" style="font-size:12px; color:#aaa;">ライブラリ読込中...</div>
     <div style="margin-left:auto; display:flex; gap:10px; align-items:center;">
-        <label>集計間隔(分): <input type="number" id="aggIntervalMin" value="2" min="1" max="60" style="width:50px;"></label>
+        <label>集計間隔(分): <input type="number" id="aggIntervalMin" value="1" min="1" max="60" style="width:50px;"></label>
     </div>
 </header>
 
 <main>
-    <section class="panel">
+    <section class="panel left-panel">
         <div class="row">
             <button id="startBtn">解析開始</button>
             <button id="stopBtn" disabled>停止</button>
@@ -117,9 +117,14 @@
         <div id="diag" class="diag">システム待機中...</div>
     </section>
 
-    <section class="panel history-panel">
-        <h3 style="margin-top:0; font-size:16px;">履歴データ: <span id="intervalLabel" style="font-weight:normal; color:#aaa;">-</span></h3>
+    <section class="panel right-panel">
+        <h3 style="margin-top:0; font-size:16px;">統計トレンド: <span id="intervalLabel" style="font-weight:normal; color:#aaa;">-</span></h3>
         
+        <div id="chartContainer">
+            <canvas id="historyChart"></canvas>
+        </div>
+
+        <h3 style="margin-top:10px; font-size:15px; border-top:1px solid #333; padding-top:15px;">履歴データ</h3>
         <div class="table-container">
             <table>
                 <thead>
@@ -128,14 +133,13 @@
                 <tbody id="tableBody"></tbody>
             </table>
         </div>
-
-        <div id="chartContainer">
-            <canvas id="historyChart"></canvas>
-        </div>
     </section>
 </main>
 
 <script>
+/**
+ * 人物通過・滞在カウンター Pro Logic
+ */
 let model, stream, running = false;
 const video = document.getElementById('video');
 const canvas = document.getElementById('overlay');
@@ -151,6 +155,7 @@ let intervalStartMs = 0;
 let intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
 const intervalHistory = [];
 
+// --- 初期化 ---
 window.addEventListener('DOMContentLoaded', async () => {
     initChart();
     try {
@@ -212,6 +217,7 @@ async function startSystem() {
     }
 }
 
+// --- 追跡・カウントロジック ---
 function updateTracks(detections) {
     const scoreThr = 0.55;
     const scaleX = canvas.width / video.videoWidth;
@@ -297,6 +303,7 @@ function processCounting(t) {
     }
 }
 
+// --- メインループ ---
 async function startLoop() {
     if (!running) return;
     const startTime = performance.now();
@@ -313,9 +320,10 @@ async function startLoop() {
     setTimeout(startLoop, Math.max(0, 66 - elapsed));
 }
 
+// --- 集計・UI ---
 function resetAggregator() {
     if (aggregatorTimer) clearTimeout(aggregatorTimer);
-    const mins = parseInt(document.getElementById('aggIntervalMin').value) || 2;
+    const mins = parseInt(document.getElementById('aggIntervalMin').value) || 1;
     aggregatorTimer = setTimeout(finishInterval, mins * 60000);
     updateIntervalLabel(mins);
 }
@@ -356,7 +364,8 @@ function drawOverlay() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const viewMode = document.getElementById('displayMode').value;
     if (viewMode === 'videoOnly') return;
-
+    ctx.lineWidth = 2;
+    ctx.font = '14px sans-serif';
     for (const t of tracks.values()) {
         ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
         ctx.strokeRect(t.x, t.y, t.w, t.h);
@@ -370,11 +379,13 @@ function updateDisplayModeUI() {
     const rect = canvas.getBoundingClientRect();
     if (mode === 'midline') {
         midline.style.display = 'block';
-        midline.style.left = '50%';
+        midline.style.left = (rect.width / 2) + 'px';
         areaBox.style.display = 'none';
     } else {
         midline.style.display = 'none';
         areaBox.style.display = 'block';
+        areaBox.style.left = '30%'; areaBox.style.top = '30%';
+        areaBox.style.width = '40%'; areaBox.style.height = '40%';
     }
 }
 
