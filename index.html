@@ -2,67 +2,40 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>人物通過カウンター Pro (No Graph Edition)</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>人物通過カウンター Lite (Stability Fix)</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <style>
         :root { color-scheme: dark; }
-        body { font-family: system-ui, sans-serif; margin:0; background:#111; color:#eee; line-height: 1.5; }
-        
-        /* 全体レイアウト */
-        header { padding: 12px; background: #222; border-bottom: 1px solid #444; position: sticky; top: 0; z-index: 100; }
-        main { padding: 10px; display: flex; flex-direction: column; gap: 15px; }
-
-        /* セクション共通パネル */
-        .panel { background: #1e1e1e; border-radius: 8px; padding: 12px; border: 1px solid #333; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-        h3 { margin: 0 0 10px 0; font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
-
-        /* 操作ボタンエリア */
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-        button, select, input { 
-            padding: 12px; border-radius: 6px; border: 1px solid #555; 
-            background: #2a2a2a; color: #eee; font-size: 14px; width: 100%; box-sizing: border-box;
-        }
+        body { font-family: system-ui, sans-serif; margin:0; background:#111; color:#eee; overflow-x: hidden; }
+        header { padding: 12px; background: #222; border-bottom: 1px solid #444; }
+        main { padding: 10px; display: flex; flex-direction: column; gap: 12px; }
+        .panel { background: #1e1e1e; border-radius: 8px; padding: 12px; border: 1px solid #333; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+        button, select, input { padding: 12px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: 14px; width: 100%; }
         button#startBtn { background: #007bff; border: none; font-weight: bold; }
         button#stopBtn { background: #dc3545; border: none; }
-        
-        .config-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-        .config-row label { font-size: 13px; white-space: nowrap; }
-
-        /* 映像表示エリア */
-        #wrap { 
-            position: relative; width: 100%; aspect-ratio: 16/9; 
-            background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444;
-        }
+        #wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444; }
         video { width: 100%; height: 100%; object-fit: contain; }
         canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
-        .line { position: absolute; top: 0; width: 2px; background: rgba(0,229,255,0.8); z-index: 3; display: none; }
-
-        /* リアルタイム数値カウンター */
         .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .count-item { background: #252525; padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #333; }
-        .count-label { font-size: 11px; color: #aaa; display: block; margin-bottom: 4px; }
-        .count-value { font-size: 26px; font-weight: bold; display: block; }
+        .count-value { font-size: 24px; font-weight: bold; display: block; }
         .ok { color: #3fd88f; }
         .warn { color: #ffcc66; }
-
-        /* 履歴テーブル */
-        .table-wrap { max-height: 250px; overflow-y: auto; border: 1px solid #333; border-radius: 4px; background: #181818; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { background: #2a2a2a; padding: 10px; position: sticky; top: 0; z-index: 10; border-bottom: 1px solid #444; }
-        td { padding: 10px; text-align: center; border-bottom: 1px solid #333; }
-
-        .status-footer { font-size: 12px; color: #9fd; text-align: center; margin-top: 5px; font-family: monospace; }
+        .table-wrap { max-height: 200px; overflow-y: auto; background: #181818; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { padding: 8px; text-align: center; border-bottom: 1px solid #333; }
+        .status-msg { font-size: 11px; color: #9fd; text-align: center; margin-top: 8px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
 <header>
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:bold;">人物通過カウンター Pro</span>
-        <span id="status" style="font-size:11px; color:#aaa;">準備中...</span>
+        <span style="font-weight:bold;">人物カウンター Pro (安定版)</span>
+        <span id="status" style="font-size:10px; color:#aaa;">準備中</span>
     </div>
 </header>
 
@@ -71,54 +44,35 @@
         <div class="controls">
             <button id="startBtn">解析開始</button>
             <button id="stopBtn" disabled>停止</button>
-            <select id="modeSel">
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+            <select id="modeSel" style="flex:2;">
                 <option value="midline">中央ライン通過判定</option>
                 <option value="area">エリア進入判定</option>
             </select>
-            <button id="exportExcelBtn" disabled>Excel出力</button>
+            <input type="number" id="aggIntervalMin" value="1" min="1" style="flex:1;">
+            <span style="font-size:12px;">分</span>
         </div>
-        <div class="config-row">
-            <label>集計間隔(分):</label>
-            <input type="number" id="aggIntervalMin" value="1" min="1" max="60">
-        </div>
-        
         <div id="wrap">
             <video id="video" autoplay playsinline muted></video>
             <canvas id="overlay"></canvas>
-            <div id="midline" class="line"></div>
         </div>
-        <div id="diag" class="status-footer">ライブラリ読み込み中...</div>
+        <div id="diag" class="status-msg">読込完了までお待ちください</div>
     </section>
 
     <section class="panel">
-        <h3>現在のカウント</h3>
         <div class="count-grid">
-            <div class="count-item">
-                <span class="count-label">左→右 / 進入</span>
-                <span class="count-value ok" id="liveL2R">0</span>
-            </div>
-            <div class="count-item">
-                <span class="count-label">右→左 / 退出</span>
-                <span class="count-value ok" id="liveR2L">0</span>
-            </div>
-            <div class="count-item">
-                <span class="count-label">滞在(1分以上)</span>
-                <span class="count-value warn" id="liveStayers">0</span>
-            </div>
-            <div class="count-item">
-                <span class="count-label">画面内の人数</span>
-                <span class="count-value" id="currentInFrame">0</span>
-            </div>
+            <div class="count-item"><span style="font-size:10px; color:#999;">進入</span><span class="count-value ok" id="liveL2R">0</span></div>
+            <div class="count-item"><span style="font-size:10px; color:#999;">退出</span><span class="count-value ok" id="liveR2L">0</span></div>
+            <div class="count-item"><span style="font-size:10px; color:#999;">滞在</span><span class="count-value warn" id="liveStayers">0</span></div>
+            <div class="count-item"><span style="font-size:10px; color:#999;">画面内</span><span class="count-value" id="currentInFrame">0</span></div>
         </div>
     </section>
 
     <section class="panel">
-        <h3>履歴ログ</h3>
         <div class="table-wrap">
             <table>
-                <thead>
-                    <tr><th>時間枠</th><th>進</th><th>退</th><th>滞在</th></tr>
-                </thead>
+                <thead><tr><th>時刻</th><th>進</th><th>退</th><th>滞在</th></tr></thead>
                 <tbody id="tableBody"></tbody>
             </table>
         </div>
@@ -130,176 +84,145 @@ let model, stream, running = false;
 const video = document.getElementById('video');
 const canvas = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
-const midline = document.getElementById('midline');
 
-let nextId = 1;
 const tracks = new Map();
-let aggregatorTimer = null;
+let nextId = 1;
 let intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
-const intervalHistory = [];
+let lastAggTime = Date.now();
 
-// 初期化処理
-window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('load', async () => {
     try {
+        // GPUメモリ管理の設定
+        tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
         model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
         document.getElementById('status').textContent = '準備完了';
-        document.getElementById('diag').textContent = 'カメラの「開始」を押してください';
+        document.getElementById('diag').textContent = '「開始」で解析を開始します';
     } catch(e) {
-        document.getElementById('status').textContent = '読込失敗';
-        document.getElementById('diag').textContent = 'エラー: ' + e.message;
+        document.getElementById('diag').textContent = 'モデルの読込に失敗しました';
     }
 });
 
-// 解析開始
 async function startSystem() {
     try {
         stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment" }, audio: false 
+            video: { facingMode: "environment", width: 640, height: 480 }, audio: false 
         });
         video.srcObject = stream;
         await video.play();
-        
         running = true;
-        startLoop();
-        resetAggregator();
-        updateLineUI();
-        resize();
-        
         document.getElementById('startBtn').disabled = true;
         document.getElementById('stopBtn').disabled = false;
-        document.getElementById('exportExcelBtn').disabled = false;
-        document.getElementById('diag').textContent = '解析中...';
+        document.getElementById('diag').textContent = '解析中...（長時間使用時は発熱に注意）';
+        lastAggTime = Date.now();
+        requestAnimationFrame(predictLoop);
     } catch (e) {
-        alert("カメラの起動に失敗しました。設定を確認してください。");
+        alert("カメラへのアクセスを許可してください");
     }
 }
 
-// 追跡とカウント
-function updateTracks(detections) {
+async function predictLoop() {
+    if (!running) return;
+
+    // tf.tidyでメモリリークを防止
+    const detections = await tf.tidy(() => {
+        return model.detect(video);
+    });
+
+    updateCounting(detections);
+    checkAggregation();
+    
+    // 負荷軽減のため、少しだけ待機時間を設ける（バッテリーとメモリの保護）
+    setTimeout(() => {
+        requestAnimationFrame(predictLoop);
+    }, 50); 
+}
+
+function updateCounting(detections) {
     const scaleX = canvas.width / video.videoWidth;
     const scaleY = canvas.height / video.videoHeight;
-    const currentDets = detections.filter(d => d.class === 'person' && d.score > 0.55)
-        .map(d => ({
-            cx: (d.bbox[0] + d.bbox[2]/2) * scaleX,
-            cy: (d.bbox[1] + d.bbox[3]/2) * scaleY,
-            bbox: [d.bbox[0]*scaleX, d.bbox[1]*scaleY, d.bbox[2]*scaleX, d.bbox[3]*scaleY]
-        }));
+    const midX = canvas.width / 2;
+    const mode = document.getElementById('modeSel').value;
+    
+    const currentPeople = detections.filter(d => d.class === 'person' && d.score > 0.5);
+    const unmatched = new Set(tracks.keys());
 
-    const unmatchedTracks = new Set(tracks.keys());
-    for (const det of currentDets) {
-        let bestId = null; let minExpDist = 4000;
-        for (const id of unmatchedTracks) {
+    for (const d of currentPeople) {
+        const cx = (d.bbox[0] + d.bbox[2]/2) * scaleX;
+        const cy = (d.bbox[1] + d.bbox[3]/2) * scaleY;
+        
+        let bestId = null;
+        let minDist = 50; 
+
+        for (const id of unmatched) {
             const t = tracks.get(id);
-            const last = t.path[t.path.length - 1];
-            const dist = Math.pow(det.cx - last.cx, 2) + Math.pow(det.cy - last.cy, 2);
-            if (dist < minExpDist) { minExpDist = dist; bestId = id; }
+            const dist = Math.hypot(cx - t.x, cy - t.y);
+            if (dist < minDist) { minDist = dist; bestId = id; }
         }
+
         if (bestId !== null) {
             const t = tracks.get(bestId);
-            t.path.push({ cx: det.cx, cy: det.cy });
-            t.lastBbox = det.bbox;
-            if(t.path.length > 10) t.path.shift();
-            t.lastSeen = Date.now();
-            unmatchedTracks.delete(bestId);
-            processCounting(t);
+            const prevX = t.x;
+            t.x = cx; t.y = cy; t.lastSeen = Date.now();
+            unmatched.delete(bestId);
+
+            if (!t.counted) {
+                if (mode === 'midline') {
+                    if (prevX < midX && cx >= midX) { intervalStats.L2R++; t.counted = true; }
+                    else if (prevX > midX && cx <= midX) { intervalStats.R2L++; t.counted = true; }
+                } else {
+                    const inA = (pX, pY) => (pX > canvas.width*0.3 && pX < canvas.width*0.7 && pY > canvas.height*0.3 && pY < canvas.height*0.7);
+                    if (!t.inArea && inA(cx, cy)) { intervalStats.L2R++; t.inArea = true; }
+                    else if (t.inArea && !inA(cx, cy)) { intervalStats.R2L++; t.inArea = false; }
+                }
+            }
+            if (!t.stayed && (Date.now() - t.startMs > 60000)) { t.stayed = true; intervalStats.stayers.add(t.id); }
         } else {
-            const newId = nextId++;
-            tracks.set(newId, {
-                id: newId, path: [{ cx: det.cx, cy: det.cy }],
-                lastBbox: det.bbox, startMs: Date.now(), lastSeen: Date.now(),
-                counted: false, stayed: false, inArea: false
-            });
+            const id = nextId++;
+            tracks.set(id, { id, x: cx, y: cy, startMs: Date.now(), lastSeen: Date.now(), counted: false, stayed: false, inArea: false });
         }
     }
-    for (const id of unmatchedTracks) { if (Date.now() - tracks.get(id).lastSeen > 1000) tracks.delete(id); }
-}
 
-function processCounting(t) {
-    if (t.counted) return;
-    const mode = document.getElementById('modeSel').value;
-    if (t.path.length < 2) return;
-    const curr = t.path[t.path.length - 1];
-    const prev = t.path[t.path.length - 2];
+    for (const id of unmatched) { if (Date.now() - tracks.get(id).lastSeen > 1500) tracks.delete(id); }
 
-    if (mode === 'midline') {
-        const midX = canvas.width / 2;
-        if (prev.cx < midX && curr.cx >= midX) { intervalStats.L2R++; t.counted = true; }
-        else if (prev.cx > midX && curr.cx <= midX) { intervalStats.R2L++; t.counted = true; }
-    } else {
-        const ax1 = canvas.width * 0.3, ax2 = canvas.width * 0.7;
-        const ay1 = canvas.height * 0.3, ay2 = canvas.height * 0.7;
-        const isInside = (p) => (p.cx > ax1 && p.cx < ax2 && p.cy > ay1 && p.cy < ay2);
-        if (!t.inArea && isInside(curr)) { intervalStats.L2R++; t.inArea = true; }
-        else if (t.inArea && !isInside(curr)) { intervalStats.R2L++; t.inArea = false; }
-    }
-    if (!t.stayed && (Date.now() - t.startMs > 60000)) { t.stayed = true; intervalStats.stayers.add(t.id); }
-}
-
-async function startLoop() {
-    if (!running) return;
-    const detections = await model.detect(video);
-    updateTracks(detections);
-    drawOverlay();
+    // 数値更新
     document.getElementById('liveL2R').textContent = intervalStats.L2R;
     document.getElementById('liveR2L').textContent = intervalStats.R2L;
     document.getElementById('liveStayers').textContent = intervalStats.stayers.size;
     document.getElementById('currentInFrame').textContent = tracks.size;
-    requestAnimationFrame(startLoop);
-}
-
-function resetAggregator() {
-    if (aggregatorTimer) clearTimeout(aggregatorTimer);
-    const mins = parseInt(document.getElementById('aggIntervalMin').value) || 1;
-    aggregatorTimer = setTimeout(finishInterval, mins * 60000);
-}
-
-function finishInterval() {
-    const now = new Date();
-    const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
-    const entry = { time: timeStr, l2r: intervalStats.L2R, r2l: intervalStats.R2L, stayers: intervalStats.stayers.size };
-    intervalHistory.push(entry);
-    updateTable(entry);
-    intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
-    resetAggregator();
-}
-
-function updateTable(e) {
-    const row = `<tr><td>${e.time}</td><td>${e.l2r}</td><td>${e.r2l}</td><td>${e.stayers}</td></tr>`;
-    document.getElementById('tableBody').insertAdjacentHTML('afterbegin', row);
-}
-
-function drawOverlay() {
+    
+    // 描画
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.lineWidth = 2;
-    for (const t of tracks.values()) {
-        ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-        ctx.strokeRect(...t.lastBbox);
+    ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 2;
+    for(const t of tracks.values()) {
+        ctx.strokeRect(t.x-20, t.y-40, 40, 80);
     }
 }
 
-function updateLineUI() {
-    const mode = document.getElementById('modeSel').value;
-    midline.style.display = (mode === 'midline') ? 'block' : 'none';
-    midline.style.left = '50%';
+function checkAggregation() {
+    const intervalMs = (parseInt(document.getElementById('aggIntervalMin').value) || 1) * 60000;
+    if (Date.now() - lastAggTime > intervalMs) {
+        const now = new Date();
+        const timeStr = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
+        const row = `<tr><td>${timeStr}</td><td>${intervalStats.L2R}</td><td>${intervalStats.R2L}</td><td>${intervalStats.stayers.size}</td></tr>`;
+        document.getElementById('tableBody').insertAdjacentHTML('afterbegin', row);
+        
+        intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
+        lastAggTime = Date.now();
+    }
 }
 
 document.getElementById('startBtn').addEventListener('click', startSystem);
-document.getElementById('stopBtn').addEventListener('click', () => { 
-    running = false; if(stream) stream.getTracks().forEach(t => t.stop());
+document.getElementById('stopBtn').addEventListener('click', () => {
+    running = false;
+    if(stream) stream.getTracks().forEach(t => t.stop());
     document.getElementById('startBtn').disabled = false;
     document.getElementById('stopBtn').disabled = true;
-});
-document.getElementById('modeSel').addEventListener('change', updateLineUI);
-document.getElementById('exportExcelBtn').addEventListener('click', () => {
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(intervalHistory);
-    XLSX.utils.book_append_sheet(wb, ws, "CountingReport");
-    XLSX.writeFile(wb, `report_${new Date().getTime()}.xlsx`);
+    document.getElementById('diag').textContent = '停止しました';
 });
 
 function resize() {
-    const w = document.getElementById('wrap');
-    canvas.width = w.clientWidth; canvas.height = w.clientHeight;
+    canvas.width = video.clientWidth;
+    canvas.height = video.clientHeight;
 }
 window.addEventListener('resize', resize);
 </script>
