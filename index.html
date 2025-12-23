@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>人物通過カウンター Pro (感度調整版)</title>
+    <title>人物通過カウンター Pro (表示切替版)</title>
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <style>
         :root { color-scheme: dark; }
@@ -11,7 +11,6 @@
         main { padding: 10px; display: flex; flex-direction: column; gap: 15px; }
         .panel { background: #1e1e1e; border-radius: 8px; padding: 12px; border: 1px solid #333; }
         
-        /* 操作系 */
         .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
         button, select, input { padding: 12px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: 14px; width: 100%; box-sizing: border-box; }
         button#startBtn { background: #007bff; border: none; font-weight: bold; }
@@ -20,7 +19,7 @@
         .config-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; padding: 10px; background: #252525; border-radius: 6px; }
         .config-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
         .config-row label { font-size: 13px; color: #aaa; white-space: nowrap; }
-        .config-row input[type="range"] { flex: 1; height: 8px; }
+        .config-row input[type="range"] { flex: 1; }
 
         /* 映像エリア */
         #wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444; }
@@ -51,7 +50,7 @@
 
 <header>
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:bold;">人物通過カウンター Pro</span>
+        <span style="font-weight:bold;">通過カウンター Pro (安定版)</span>
         <span id="status" style="font-size:11px; color:#aaa;">読込中...</span>
     </div>
 </header>
@@ -70,12 +69,20 @@
 
         <div class="config-group">
             <div class="config-row">
-                <label>検知感度(しきい値): <span id="thresholdVal">0.50</span></label>
+                <label>表示モード:</label>
+                <select id="displayMode">
+                    <option value="both">画像 + 判定枠 (通常)</option>
+                    <option value="boxOnly">判定枠のみ (低負荷)</option>
+                    <option value="none">表示なし (最小負荷)</option>
+                </select>
+            </div>
+            <div class="config-row">
+                <label>検知感度: <span id="thresholdVal">0.50</span></label>
                 <input type="range" id="thresholdRange" min="0.1" max="0.9" step="0.05" value="0.5">
             </div>
             <div class="config-row">
                 <label>集計間隔(分):</label>
-                <input type="number" id="aggIntervalMin" value="1" min="1" max="60" style="width:70px; padding:6px;">
+                <input type="number" id="aggIntervalMin" value="1" min="1" style="width:70px; padding:6px;">
             </div>
         </div>
         
@@ -118,16 +125,17 @@ let intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
 let lastAggTime = Date.now();
 const intervalHistory = [];
 
-// しきい値のリアルタイム表示更新
 const threshRange = document.getElementById('thresholdRange');
 const threshVal = document.getElementById('thresholdVal');
+const displayMode = document.getElementById('displayMode');
+
 threshRange.oninput = () => { threshVal.textContent = parseFloat(threshRange.value).toFixed(2); };
 
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
         document.getElementById('status').textContent = '準備完了';
-        document.getElementById('diag').textContent = '「開始」を押して解析をスタート';
+        document.getElementById('diag').textContent = '「開始」で解析スタート';
     } catch(e) {
         document.getElementById('diag').textContent = 'エラー: ' + e.message;
     }
@@ -139,7 +147,7 @@ async function startSystem() {
             video: { facingMode: "environment", width: { ideal: 640 } }, audio: false 
         });
         video.srcObject = stream;
-        video.onloadedmetadata = () => { resize(); updateModeUI(); };
+        video.onloadedmetadata = () => { resize(); updateUILayout(); };
         await video.play();
         running = true;
         lastAggTime = Date.now();
@@ -156,9 +164,7 @@ async function startSystem() {
 async function mainLoop() {
     if (!running) return;
     
-    // スライダーから現在のしきい値を取得
     const currentThreshold = parseFloat(threshRange.value);
-    
     const detections = await model.detect(video);
     tf.disposeVariables(); 
 
@@ -172,8 +178,11 @@ function updateLogic(detections, threshold) {
     const scaleY = canvas.height / video.videoHeight;
     const midX = canvas.width / 2;
     const mode = document.getElementById('modeSel').value;
+    const dMode = displayMode.value;
     
-    // 設定されたしきい値でフィルタリング
+    // 表示設定によるビデオ表示の切り替え
+    video.style.visibility = (dMode === 'both') ? 'visible' : 'hidden';
+
     const people = detections.filter(d => d.class === 'person' && d.score > threshold);
     const unmatched = new Set(tracks.keys());
 
@@ -217,7 +226,7 @@ function updateLogic(detections, threshold) {
 
     for (const id of unmatched) { if (Date.now() - tracks.get(id).lastSeen > 1200) tracks.delete(id); }
 
-    // UI更新
+    // 数値更新
     document.getElementById('liveL2R').textContent = intervalStats.L2R;
     document.getElementById('liveR2L').textContent = intervalStats.R2L;
     document.getElementById('liveStayers').textContent = intervalStats.stayers.size;
@@ -225,13 +234,15 @@ function updateLogic(detections, threshold) {
 
     // 描画
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const t of tracks.values()) {
-        ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(...t.bbox);
-        ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText(t.stayed ? "滞在者" : "ID:"+t.id, t.bbox[0], t.bbox[1]-5);
+    if (dMode !== 'none') {
+        for (const t of tracks.values()) {
+            ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(...t.bbox);
+            ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
+            ctx.font = "bold 12px sans-serif";
+            ctx.fillText(t.stayed ? "STAY" : "ID:"+t.id, t.bbox[0], t.bbox[1]-5);
+        }
     }
 }
 
@@ -242,16 +253,13 @@ function checkInterval() {
         const time = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
         const entry = { time, l2r: intervalStats.L2R, r2l: intervalStats.R2L, stay: intervalStats.stayers.size };
         intervalHistory.push(entry);
-        
-        const row = `<tr><td>${time}</td><td>${entry.l2r}</td><td>${entry.r2l}</td><td>${entry.stay}</td></tr>`;
-        document.getElementById('tableBody').insertAdjacentHTML('afterbegin', row);
-        
+        document.getElementById('tableBody').insertAdjacentHTML('afterbegin', `<tr><td>${time}</td><td>${entry.l2r}</td><td>${entry.r2l}</td><td>${entry.stay}</td></tr>`);
         intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
         lastAggTime = Date.now();
     }
 }
 
-function updateModeUI() {
+function updateUILayout() {
     const mode = document.getElementById('modeSel').value;
     document.getElementById('midline').style.display = (mode === 'midline') ? 'block' : 'none';
     document.getElementById('midline').style.left = '50%';
@@ -260,7 +268,7 @@ function updateModeUI() {
     ab.style.left = '30%'; ab.style.top = '30%'; ab.style.width = '40%'; ab.style.height = '40%';
 }
 
-document.getElementById('modeSel').onchange = updateModeUI;
+document.getElementById('modeSel').onchange = updateUILayout;
 document.getElementById('startBtn').onclick = startSystem;
 document.getElementById('stopBtn').onclick = () => {
     running = false;
@@ -272,7 +280,7 @@ document.getElementById('exportExcelBtn').onclick = () => {
     const ws = XLSX.utils.json_to_sheet(intervalHistory);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CountLog");
-    XLSX.writeFile(wb, "person_count_report.xlsx");
+    XLSX.writeFile(wb, "report.xlsx");
 };
 
 function resize() {
