@@ -12,6 +12,9 @@
         main { display:grid; grid-template-columns: 720px 1fr; gap:16px; padding:16px; }
         .panel { padding:16px; background:#1e1e1e; border-radius:8px; margin-bottom:16px; display: flex; flex-direction: column; }
         
+        /* 右側パネルのレイアウト調整 */
+        .history-panel { height: calc(100vh - 120px); min-height: 650px; }
+        
         .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
         button, select, input { padding:8px 12px; border-radius:6px; border:1px solid #555; background:#2a2a2a; color:#eee; cursor:pointer; font-size: 14px; }
         button:hover { background: #333; }
@@ -33,19 +36,37 @@
         .ok { color:#3fd88f; }
         .warn { color:#ffcc66; }
         
-        /* 履歴・グラフエリア */
-        .table-container { flex-grow: 1; max-height: 400px; overflow-y: auto; border: 1px solid #333; border-radius: 4px; margin-bottom: 20px; }
+        /* 履歴・グラフエリアの修正 */
+        .table-container { 
+            flex: 1; 
+            min-height: 150px; 
+            max-height: 350px; 
+            overflow-y: auto; 
+            border: 1px solid #333; 
+            border-radius: 4px; 
+            margin-bottom: 20px; 
+            background: #181818;
+        }
         table { width:100%; border-collapse: collapse; font-size:13px; }
-        th { position: sticky; top: 0; background: #2a2a2a; padding: 10px; }
+        th { position: sticky; top: 0; background: #2a2a2a; padding: 10px; z-index: 5; }
         td { border-bottom: 1px solid #333; padding: 8px; text-align: center; }
         
-        #chartContainer { height: 250px; width: 100%; background: #181818; padding: 10px; border-radius: 8px; box-sizing: border-box; }
+        #chartContainer { 
+            height: 250px; 
+            width: 100%; 
+            background: #181818; 
+            padding: 10px; 
+            border-radius: 8px; 
+            box-sizing: border-box; 
+            margin-top: auto; 
+        }
         
         .diag { font-size:12px; color:#9fd; margin-top:12px; font-family: monospace; }
 
         @media (max-width: 1150px) { 
             main { grid-template-columns: 1fr; } 
             #wrap { width: 100%; height: auto; aspect-ratio: 16/9; } 
+            .history-panel { height: auto; min-height: auto; }
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
@@ -96,7 +117,7 @@
         <div id="diag" class="diag">システム待機中...</div>
     </section>
 
-    <section class="panel">
+    <section class="panel history-panel">
         <h3 style="margin-top:0; font-size:16px;">履歴データ: <span id="intervalLabel" style="font-weight:normal; color:#aaa;">-</span></h3>
         
         <div class="table-container">
@@ -104,8 +125,7 @@
                 <thead>
                     <tr><th>時間枠</th><th>L→R/進</th><th>R→L/退</th><th>滞在</th></tr>
                 </thead>
-                <tbody id="tableBody">
-                    </tbody>
+                <tbody id="tableBody"></tbody>
             </table>
         </div>
 
@@ -116,9 +136,6 @@
 </main>
 
 <script>
-/**
- * 人物通過・滞在カウンター Pro Logic
- */
 let model, stream, running = false;
 const video = document.getElementById('video');
 const canvas = document.getElementById('overlay');
@@ -134,7 +151,6 @@ let intervalStartMs = 0;
 let intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
 const intervalHistory = [];
 
-// --- 初期化 ---
 window.addEventListener('DOMContentLoaded', async () => {
     initChart();
     try {
@@ -185,7 +201,7 @@ async function startSystem() {
         startLoop();
         resetAggregator();
         updateDisplayModeUI();
-        resize(); // 初回リサイズ
+        resize();
         
         document.getElementById('startBtn').disabled = true;
         document.getElementById('stopBtn').disabled = false;
@@ -196,7 +212,6 @@ async function startSystem() {
     }
 }
 
-// --- 追跡・カウントロジック ---
 function updateTracks(detections) {
     const scoreThr = 0.55;
     const scaleX = canvas.width / video.videoWidth;
@@ -231,7 +246,7 @@ function updateTracks(detections) {
             const t = tracks.get(bestId);
             t.x = det.x; t.y = det.y; t.w = det.w; t.h = det.h;
             t.path.push({ cx: det.cx, cy: det.cy });
-            if(t.path.length > 20) t.path.shift(); // メモリ節約
+            if(t.path.length > 20) t.path.shift();
             t.lastSeen = Date.now();
             unmatchedTracks.delete(bestId);
             processCounting(t);
@@ -245,7 +260,6 @@ function updateTracks(detections) {
             });
         }
     }
-
     for (const id of unmatchedTracks) {
         if (Date.now() - tracks.get(id).lastSeen > 1000) tracks.delete(id);
     }
@@ -256,7 +270,6 @@ function processCounting(t) {
     const mode = document.getElementById('modeSel').value;
     const canvasW = canvas.width;
     const canvasH = canvas.height;
-    
     if (t.path.length < 2) return;
     const curr = t.path[t.path.length - 1];
     const prev = t.path[t.path.length - 2];
@@ -272,21 +285,18 @@ function processCounting(t) {
         const ax1 = canvasW * 0.3, ax2 = canvasW * 0.7;
         const ay1 = canvasH * 0.3, ay2 = canvasH * 0.7;
         const isInside = (p) => (p.cx > ax1 && p.cx < ax2 && p.cy > ay1 && p.cy < ay2);
-        
         if (!t.inArea && isInside(curr)) {
             intervalStats.L2R++; t.inArea = true;
         } else if (t.inArea && !isInside(curr)) {
             intervalStats.R2L++; t.inArea = false;
         }
     }
-
     if (!t.stayed && (Date.now() - t.startMs > 60000)) {
         t.stayed = true;
         intervalStats.stayers.add(t.id);
     }
 }
 
-// --- メインループ ---
 async function startLoop() {
     if (!running) return;
     const startTime = performance.now();
@@ -303,7 +313,6 @@ async function startLoop() {
     setTimeout(startLoop, Math.max(0, 66 - elapsed));
 }
 
-// --- 集計・UI ---
 function resetAggregator() {
     if (aggregatorTimer) clearTimeout(aggregatorTimer);
     const mins = parseInt(document.getElementById('aggIntervalMin').value) || 2;
@@ -314,18 +323,10 @@ function resetAggregator() {
 function finishInterval() {
     const now = new Date();
     const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
-    
-    const entry = {
-        time: timeStr,
-        l2r: intervalStats.L2R,
-        r2l: intervalStats.R2L,
-        stayers: intervalStats.stayers.size
-    };
-    
+    const entry = { time: timeStr, l2r: intervalStats.L2R, r2l: intervalStats.R2L, stayers: intervalStats.stayers.size };
     intervalHistory.push(entry);
     updateTable(entry);
     updateChart();
-    
     intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
     intervalStartMs = Date.now();
     resetAggregator();
@@ -356,22 +357,11 @@ function drawOverlay() {
     const viewMode = document.getElementById('displayMode').value;
     if (viewMode === 'videoOnly') return;
 
-    ctx.lineWidth = 2;
-    ctx.font = '14px sans-serif';
-
     for (const t of tracks.values()) {
         ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
         ctx.strokeRect(t.x, t.y, t.w, t.h);
         ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-        ctx.fillText(`ID:${t.id}${t.stayed ? ' (STAY)':''}`, t.x, t.y - 5);
-        
-        if (t.path.length > 1) {
-            ctx.beginPath();
-            ctx.strokeStyle = 'rgba(0, 229, 255, 0.3)';
-            ctx.moveTo(t.path[0].cx, t.path[0].cy);
-            for(let p of t.path) ctx.lineTo(p.cx, p.cy);
-            ctx.stroke();
-        }
+        ctx.fillText(`ID:${t.id}`, t.x, t.y - 5);
     }
 }
 
@@ -380,17 +370,14 @@ function updateDisplayModeUI() {
     const rect = canvas.getBoundingClientRect();
     if (mode === 'midline') {
         midline.style.display = 'block';
-        midline.style.left = (rect.width / 2) + 'px';
+        midline.style.left = '50%';
         areaBox.style.display = 'none';
     } else {
         midline.style.display = 'none';
         areaBox.style.display = 'block';
-        areaBox.style.left = '30%'; areaBox.style.top = '30%';
-        areaBox.style.width = '40%'; areaBox.style.height = '40%';
     }
 }
 
-// --- イベントリスナー ---
 document.getElementById('startBtn').addEventListener('click', startSystem);
 document.getElementById('stopBtn').addEventListener('click', () => { 
     running = false; 
