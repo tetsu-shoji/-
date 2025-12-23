@@ -2,59 +2,58 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>人物通過・滞在カウンター Pro (Mobile Optimized)</title>
+    <title>人物通過カウンター Pro (Mobile Fix)</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <style>
         :root { color-scheme: dark; }
-        body { font-family: system-ui, sans-serif; margin:0; background:#111; color:#eee; }
+        body { font-family: system-ui, sans-serif; margin:0; background:#111; color:#eee; line-height: 1.4; }
         
-        /* ヘッダーの調整 */
-        header { padding:12px; background:#222; border-bottom:1px solid #444; position:sticky; top:0; z-index:100; }
-        .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .header-bottom { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-        
-        /* メインレイアウト：基本は縦並び(スマホ) */
-        main { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
-        
-        .panel { padding:12px; background:#1e1e1e; border-radius:8px; display: flex; flex-direction: column; }
-        
-        /* 操作ボタンの並び */
-        .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-        button, select, input { padding:10px; border-radius:6px; border:1px solid #555; background:#2a2a2a; color:#eee; cursor:pointer; font-size: 14px; flex: 1; min-width: 120px; }
-        button#startBtn { background: #007bff; border:none; color: white; }
-        button#stopBtn { background: #dc3545; border:none; color: white; }
-        
-        /* 映像エリア：スマホの幅に合わせる */
-        #wrap { position:relative; overflow:hidden; width:100%; aspect-ratio: 16/9; background:#000; border-radius:8px; border:1px solid #333; margin: 0 auto 12px; }
-        video { width:100%; height:100%; object-fit:contain; }
-        canvas { position:absolute; left:0; top:0; width:100%; height:100%; z-index:2; pointer-events:none; }
-        .line { position:absolute; top:0; width:2px; background:rgba(0,229,255,0.8); z-index:3; display:none; }
-        .area-box { position:absolute; border:2px dashed rgba(255,204,102,0.6); z-index:3; display:none; pointer-events:none; }
-        
-        /* リアルタイムカウンター */
-        .count-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-        .count-item { background: #252525; padding: 10px; border-radius: 6px; text-align: center; font-size: 12px; }
-        .count { font-size: 24px; font-weight: 700; display: block; margin-top: 4px; }
-        .ok { color:#3fd88f; }
-        .warn { color:#ffcc66; }
-        
-        /* グラフエリア */
-        #chartContainer { height: 250px; width: 100%; background: #181818; padding: 10px; border-radius: 8px; box-sizing: border-box; margin-bottom: 12px; }
-        
-        /* 履歴テーブル */
-        .table-container { max-height: 300px; overflow-y: auto; border: 1px solid #333; border-radius: 4px; background: #181818; }
-        table { width:100%; border-collapse: collapse; font-size:12px; }
-        th { position: sticky; top: 0; background: #2a2a2a; padding: 8px; z-index: 5; border-bottom: 1px solid #444; }
-        td { border-bottom: 1px solid #333; padding: 8px; text-align: center; }
-        
-        .diag { font-size:11px; color:#9fd; margin-top:12px; font-family: monospace; text-align: center; }
+        /* 全体コンテナ */
+        header { padding: 12px; background: #222; border-bottom: 1px solid #444; }
+        main { padding: 10px; display: flex; flex-direction: column; gap: 15px; }
 
-        /* PC表示用(画面が広い場合)の調整 */
-        @media (min-width: 1024px) {
-            main { display: grid; grid-template-columns: 1fr 400px; align-items: start; }
-            #wrap { max-width: 800px; }
-            .count-grid { grid-template-columns: repeat(4, 1fr); }
+        /* セクション共通 */
+        .panel { background: #1e1e1e; border-radius: 8px; padding: 12px; border: 1px solid #333; }
+        h3 { margin: 0 0 10px 0; font-size: 14px; color: #aaa; }
+
+        /* 操作エリア */
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+        button, select, input { 
+            padding: 12px 8px; border-radius: 6px; border: 1px solid #555; 
+            background: #2a2a2a; color: #eee; font-size: 14px; width: 100%; box-sizing: border-box;
         }
+        button#startBtn { background: #007bff; border: none; font-weight: bold; }
+        button#stopBtn { background: #dc3545; border: none; }
+
+        /* 映像エリア：ここをシンプルに */
+        #wrap { 
+            position: relative; width: 100%; aspect-ratio: 16/9; 
+            background: #000; border-radius: 6px; overflow: hidden; margin-bottom: 10px;
+        }
+        video { width: 100%; height: 100%; object-fit: contain; }
+        canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+
+        /* グラフエリア：高さを抑えて固定 */
+        #chartContainer { 
+            width: 100%; height: 200px; background: #181818; 
+            border-radius: 6px; padding: 5px; box-sizing: border-box;
+        }
+
+        /* カウンター数値 */
+        .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .count-item { background: #252525; padding: 8px; border-radius: 6px; text-align: center; }
+        .count-label { font-size: 11px; color: #999; display: block; }
+        .count-value { font-size: 22px; font-weight: bold; display: block; }
+        .ok { color: #3fd88f; }
+        .warn { color: #ffcc66; }
+
+        /* 履歴テーブル */
+        .table-wrap { max-height: 200px; overflow-y: auto; border: 1px solid #333; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { background: #2a2a2a; padding: 8px; position: sticky; top: 0; }
+        td { padding: 8px; text-align: center; border-bottom: 1px solid #333; }
+
+        .status-msg { font-size: 12px; color: #9fd; text-align: center; margin-top: 5px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
@@ -64,13 +63,9 @@
 <body>
 
 <header>
-    <div class="header-top">
-        <div style="font-weight:bold; font-size:1.1em;">人物通過カウンター Pro</div>
-        <div id="status" style="font-size:11px; color:#aaa;">読込中...</div>
-    </div>
-    <div class="header-bottom">
-        <label>集計(分):</label>
-        <input type="number" id="aggIntervalMin" value="1" min="1" max="60" style="width:60px; min-width:60px; padding:4px 8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-weight:bold;">人物通過カウンター Pro</span>
+        <span id="status" style="font-size:11px; color:#aaa;">読込中...</span>
     </div>
 </header>
 
@@ -81,35 +76,53 @@
             <button id="stopBtn" disabled>停止</button>
             <select id="modeSel">
                 <option value="midline">中央ライン通過</option>
-                <option value="area">エリア判定(中央)</option>
+                <option value="area">中央エリア判定</option>
             </select>
             <button id="exportExcelBtn" disabled>Excel出力</button>
         </div>
-
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+            <span style="font-size:13px;">集計(分):</span>
+            <input type="number" id="aggIntervalMin" value="1" min="1" max="60" style="flex:1;">
+        </div>
+        
         <div id="wrap">
             <video id="video" autoplay playsinline muted></video>
             <canvas id="overlay"></canvas>
-            <div id="midline" class="line"></div>
-            <div id="areaBox" class="area-box"></div>
         </div>
-
-        <div class="count-grid">
-            <div class="count-item">左→右 / 進入<br><span class="count ok" id="liveL2R">0</span></div>
-            <div class="count-item">右→左 / 退出<br><span class="count ok" id="liveR2L">0</span></div>
-            <div class="count-item">滞在(1分+)<br><span class="count warn" id="liveStayers">0</span></div>
-            <div class="count-item">現在人数<br><span class="count" id="currentInFrame">0</span></div>
-        </div>
-        <div id="diag" class="diag">システム待機中...</div>
+        <div id="diag" class="status-msg">モデル読み込みを待っています...</div>
     </section>
 
     <section class="panel">
-        <h3 style="margin:0 0 10px 0; font-size:14px; color:#aaa;">統計トレンド: <span id="intervalLabel">-</span></h3>
+        <h3>1分ごとの推移</h3>
         <div id="chartContainer">
             <canvas id="historyChart"></canvas>
         </div>
+    </section>
 
-        <h3 style="margin:10px 0 10px 0; font-size:14px; color:#aaa; border-top:1px solid #333; padding-top:10px;">履歴データ</h3>
-        <div class="table-container">
+    <section class="panel">
+        <div class="count-grid">
+            <div class="count-item">
+                <span class="count-label">左→右 / 進入</span>
+                <span class="count-value ok" id="liveL2R">0</span>
+            </div>
+            <div class="count-item">
+                <span class="count-label">右→左 / 退出</span>
+                <span class="count-value ok" id="liveR2L">0</span>
+            </div>
+            <div class="count-item">
+                <span class="count-label">滞在(1分以上)</span>
+                <span class="count-value warn" id="liveStayers">0</span>
+            </div>
+            <div class="count-item">
+                <span class="count-label">現在の人数</span>
+                <span class="count-value" id="currentInFrame">0</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h3>履歴ログ</h3>
+        <div class="table-wrap">
             <table>
                 <thead>
                     <tr><th>時間</th><th>進</th><th>退</th><th>滞在</th></tr>
@@ -121,13 +134,10 @@
 </main>
 
 <script>
-let model, stream, running = false;
+let model, stream, running = false, chart;
 const video = document.getElementById('video');
 const canvas = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
-const midline = document.getElementById('midline');
-const areaBox = document.getElementById('areaBox');
-let chart;
 
 let nextId = 1;
 const tracks = new Map();
@@ -136,12 +146,13 @@ let intervalStartMs = 0;
 let intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
 const intervalHistory = [];
 
+// 初期化
 window.addEventListener('DOMContentLoaded', async () => {
     initChart();
     try {
-        document.getElementById('status').textContent = 'モデル読込中...';
         model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
         document.getElementById('status').textContent = '準備完了';
+        document.getElementById('diag').textContent = '「解析開始」をタップしてください';
     } catch(e) {
         document.getElementById('status').textContent = 'エラー';
     }
@@ -163,9 +174,9 @@ function initChart() {
             maintainAspectRatio: false,
             scales: { 
                 y: { beginAtZero: true, grid: { color: '#333' } },
-                x: { ticks: { color: '#aaa' } }
+                x: { ticks: { color: '#aaa', font: { size: 10 } } }
             },
-            plugins: { legend: { labels: { color: '#eee' }, position: 'bottom' } }
+            plugins: { legend: { display: false } }
         }
     });
 }
@@ -173,8 +184,7 @@ function initChart() {
 async function startSystem() {
     try {
         stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "environment" }, 
-            audio: false 
+            video: { facingMode: "environment" }, audio: false 
         });
         video.srcObject = stream;
         await video.play();
@@ -182,32 +192,29 @@ async function startSystem() {
         intervalStartMs = Date.now();
         startLoop();
         resetAggregator();
-        updateDisplayModeUI();
         resize();
         document.getElementById('startBtn').disabled = true;
         document.getElementById('stopBtn').disabled = false;
         document.getElementById('exportExcelBtn').disabled = false;
-        document.getElementById('status').textContent = '解析中';
+        document.getElementById('diag').textContent = '解析中...';
     } catch (e) {
-        alert("カメラ起動失敗: " + e.message);
+        alert("カメラの起動に失敗しました");
     }
 }
 
 function updateTracks(detections) {
-    const scoreThr = 0.55;
     const scaleX = canvas.width / video.videoWidth;
     const scaleY = canvas.height / video.videoHeight;
-    const currentDets = detections.filter(d => d.class === 'person' && d.score > scoreThr)
+    const currentDets = detections.filter(d => d.class === 'person' && d.score > 0.55)
         .map(d => ({
-            x: d.bbox[0] * scaleX, y: d.bbox[1] * scaleY,
-            w: d.bbox[2] * scaleX, h: d.bbox[3] * scaleY,
             cx: (d.bbox[0] + d.bbox[2]/2) * scaleX,
-            cy: (d.bbox[1] + d.bbox[3]/2) * scaleY
+            cy: (d.bbox[1] + d.bbox[3]/2) * scaleY,
+            bbox: [d.bbox[0]*scaleX, d.bbox[1]*scaleY, d.bbox[2]*scaleX, d.bbox[3]*scaleY]
         }));
 
     const unmatchedTracks = new Set(tracks.keys());
     for (const det of currentDets) {
-        let bestId = null; let minExpDist = 5000;
+        let bestId = null; let minExpDist = 4000;
         for (const id of unmatchedTracks) {
             const t = tracks.get(id);
             const last = t.path[t.path.length - 1];
@@ -216,8 +223,8 @@ function updateTracks(detections) {
         }
         if (bestId !== null) {
             const t = tracks.get(bestId);
-            t.x = det.x; t.y = det.y; t.w = det.w; t.h = det.h;
             t.path.push({ cx: det.cx, cy: det.cy });
+            t.lastBbox = det.bbox;
             if(t.path.length > 10) t.path.shift();
             t.lastSeen = Date.now();
             unmatchedTracks.delete(bestId);
@@ -225,9 +232,8 @@ function updateTracks(detections) {
         } else {
             const newId = nextId++;
             tracks.set(newId, {
-                id: newId, x: det.x, y: det.y, w: det.w, h: det.h,
-                path: [{ cx: det.cx, cy: det.cy }],
-                startMs: Date.now(), lastSeen: Date.now(),
+                id: newId, path: [{ cx: det.cx, cy: det.cy }],
+                lastBbox: det.bbox, startMs: Date.now(), lastSeen: Date.now(),
                 counted: false, stayed: false, inArea: false
             });
         }
@@ -272,7 +278,6 @@ function resetAggregator() {
     if (aggregatorTimer) clearTimeout(aggregatorTimer);
     const mins = parseInt(document.getElementById('aggIntervalMin').value) || 1;
     aggregatorTimer = setTimeout(finishInterval, mins * 60000);
-    updateIntervalLabel(mins);
 }
 
 function finishInterval() {
@@ -285,13 +290,6 @@ function finishInterval() {
     intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
     intervalStartMs = Date.now();
     resetAggregator();
-}
-
-function updateIntervalLabel(mins) {
-    const start = new Date(intervalStartMs);
-    const end = new Date(intervalStartMs + mins * 60000);
-    const fmt = (d) => d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    document.getElementById('intervalLabel').textContent = `${fmt(start)} 〜 ${fmt(end)}`;
 }
 
 function updateTable(e) {
@@ -309,16 +307,11 @@ function updateChart() {
 
 function drawOverlay() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.lineWidth = 2;
     for (const t of tracks.values()) {
         ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-        ctx.strokeRect(t.x, t.y, t.w, t.h);
+        ctx.strokeRect(...t.lastBbox);
     }
-}
-
-function updateDisplayModeUI() {
-    const mode = document.getElementById('modeSel').value;
-    if (mode === 'midline') { midline.style.display = 'block'; midline.style.left = '50%'; areaBox.style.display = 'none'; }
-    else { midline.style.display = 'none'; areaBox.style.display = 'block'; areaBox.style.left = '30%'; areaBox.style.top = '30%'; areaBox.style.width = '40%'; areaBox.style.height = '40%'; }
 }
 
 document.getElementById('startBtn').addEventListener('click', startSystem);
@@ -327,17 +320,10 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     document.getElementById('startBtn').disabled = false;
     document.getElementById('stopBtn').disabled = true;
 });
-document.getElementById('modeSel').addEventListener('change', updateDisplayModeUI);
-document.getElementById('exportExcelBtn').addEventListener('click', () => {
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(intervalHistory);
-    XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `report.xlsx`);
-});
+
 function resize() {
     const w = document.getElementById('wrap');
     canvas.width = w.clientWidth; canvas.height = w.clientHeight;
-    updateDisplayModeUI();
 }
 window.addEventListener('resize', resize);
 </script>
