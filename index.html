@@ -3,7 +3,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>通過カウンター Pro 2025（時間別棒グラフ・厳密カウント）</title>
+  <title>通過カウンター Pro 2025（イベント集計・時間別棒グラフ・厳密カウント）</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <style>
     :root { color-scheme: dark; --accent: #00e5ff; }
@@ -16,6 +16,7 @@
     button#startBtn { background: #28a745; border: none; font-weight: bold; }
     button#stopBtn  { background: #dc3545; border: none; }
     button#showChartsBtn { background:#0078d4; border:none; }
+
     .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
     .config-item { display: flex; flex-direction: column; gap: 4px; }
     .config-item label { font-size: 11px; color: #aaa; }
@@ -30,11 +31,6 @@
     .count-value { font-size: 20px; font-weight: bold; display: block; }
     .ok { color: #3fd88f; } .warn { color: #ffcc66; }
     .small-btn { padding: 5px; font-size: 10px; background: #444; border: none; }
-
-    .attr-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
-    .attr-item { background: #252525; padding: 8px; border-radius: 6px; text-align: center; border: 1px solid #333; }
-    .attr-label { font-size: 10px; color: #aaa; display: block; }
-    .attr-value { font-size: 18px; font-weight: bold; display: block; }
 
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { border: 1px solid #333; padding: 6px; }
@@ -52,11 +48,11 @@
     .modal-close { background:#444; border:none; color:#eee; padding:6px 10px; border-radius:6px; cursor:pointer; }
     .chart-holder { margin-bottom:12px; background:#252525; border:1px solid #333; border-radius:6px; padding:8px; }
     .chart-holder .chart-title { font-size:12px; color:#aaa; margin-bottom:6px; }
-    canvas.chart-canvas { width:100%; height:320px; }
+    canvas.chart-canvas { width:100%; height:340px; }
     .show { display:block; }
   </style>
 
-  <!-- ライブラリ -->
+  <!-- ライブラリ（正しい script タグ） -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -69,10 +65,18 @@
   <span style="font-weight:bold; font-size:14px;">通過カウンター Pro 2025</span>
   <span id="status" style="font-size:11px; color:#aaa;">モデル読込中...</span>
   <div style="display:flex; gap:6px; align-items:center; flex-wrap: wrap;">
-    <label style="font-size:11px;"><input type="checkbox" id="attrToggle" /> 属性集計（年齢層・男女）ON/OFF</label>
+    <label style="font-size:11px;"><input type="checkbox" id="attrToggle" /> 属性集計 ON/OFF</label>
     <div style="display:flex; align-items:center; gap:6px;">
       <label style="font-size:11px;">集計間隔（分）</label>
       <input type="number" id="logIntervalMin" min="0.5" max="60" step="0.5" value="2" style="width:90px;">
+    </div>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <label style="font-size:11px;">グラフ粒度（分）</label>
+      <select id="bucketSel" style="width:110px;">
+        <option value="60" selected>60</option>
+        <option value="30">30</option>
+        <option value="15">15</option>
+      </select>
     </div>
     <select id="cameraSel" style="max-width:280px"></select>
   </div>
@@ -96,7 +100,7 @@
     </small>
   </section>
 
-  <!-- カウンタ -->
+  <!-- カウンター -->
   <section class="panel">
     <div class="count-grid">
       <div class="count-item"><span class="count-label">右から</span><span class="count-value ok" id="liveL2R">0</span></div>
@@ -104,25 +108,9 @@
       <div class="count-item"><span class="count-label">滞在数</span><span class="count-value warn" id="liveStayers">0</span></div>
       <div class="count-item"><span class="count-label">現人数</span><span class="count-value" id="currentInFrame">0</span></div>
     </div>
-
-    <!-- 属性集計カード -->
-    <div class="attr-grid">
-      <div class="attr-item"><span class="attr-label">推定：男性</span><span class="attr-value" id="attrMale">0</span></div>
-      <div class="attr-item"><span class="attr-label">推定：女性</span><span class="attr-value" id="attrFemale">0</span></div>
-      <div class="attr-item"><span class="attr-label">推定：不明</span><span class="attr-value" id="attrUnknown">0</span></div>
-      <div class="attr-item"><span class="attr-label">年齢層：子ども(~12)</span><span class="attr-value" id="ageChild">0</span></div>
-      <div class="attr-item"><span class="attr-label">年齢層：若年(13~29)</span><span class="attr-value" id="ageYouth">0</span></div>
-    </div>
-    <div class="attr-grid" style="margin-top:6px;">
-      <div class="attr-item"><span class="attr-label">年齢層：成人(30~64)</span><span class="attr-value" id="ageAdult">0</span></div>
-      <div class="attr-item"><span class="attr-label">年齢層：高齢(65~)</span><span class="attr-value" id="ageSenior">0</span></div>
-      <div class="attr-item"><span class="attr-label">属性推定状態</span><span class="attr-value" id="attrStatus">OFF</span></div>
-      <div class="attr-item"><span class="attr-label">推論バックエンド</span><span class="attr-value" id="backendInfo">webgl</span></div>
-      <div class="attr-item"><span class="attr-label">フレーム更新</span><span class="attr-value" id="logInfoMini">-</span></div>
-    </div>
   </section>
 
-  <!-- 詳細設定（中央線カウントの安定化） -->
+  <!-- 詳細設定（中央線安定化） -->
   <section class="panel">
     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:5px; margin-bottom:10px;">
       <span style="font-size:12px; font-weight:bold;">詳細設定</span>
@@ -154,7 +142,7 @@
         <input type="range" id="fpsRange" min="1" max="30" step="1" value="10">
       </div>
 
-      <!-- 新規：中央線安定化パラメータ -->
+      <!-- 中央線安定化 -->
       <div class="config-item">
         <label>中央ライン バンド幅(%)：<span id="bandVal">5</span></label>
         <input type="range" id="bandRange" min="1" max="20" step="1" value="5">
@@ -164,7 +152,7 @@
         <input type="range" id="minVelRange" min="0.00" max="0.10" step="0.005" value="0.02">
       </div>
       <div class="config-item">
-        <label><input type="checkbox" id="strictToggle" checked> 厳密カウント（中央線越えを厳密判定）</label>
+        <label><input type="checkbox" id="strictToggle" checked> 厳密カウント（prevNX↔nx + 速度しきい値）</label>
       </div>
 
       <div class="config-item">
@@ -197,13 +185,6 @@
             <th style="text-align:right;">FPS</th>
             <th style="text-align:right;">滞在(秒)</th>
             <th style="text-align:right;">追跡距離</th>
-            <th style="text-align:right;">男性</th>
-            <th style="text-align:right;">女性</th>
-            <th style="text-align:right;">不明</th>
-            <th style="text-align:right;">子ども</th>
-            <th style="text-align:right;">若年</th>
-            <th style="text-align:right;">成人</th>
-            <th style="text-align:right;">高齢</th>
             <th>属性ON</th>
           </tr>
         </thead>
@@ -221,7 +202,7 @@
       <button class="modal-close" id="chartsCloseBtn">閉じる</button>
     </div>
     <div class="chart-holder">
-      <div class="chart-title">1時間ごとの人数（右から／左から）</div>
+      <div class="chart-title">時間ごとの人数（粒度は上部セレクタに連動）</div>
       <canvas id="chartHourly" class="chart-canvas"></canvas>
     </div>
   </div>
@@ -245,27 +226,24 @@ let isDragging = false;
 let stats = JSON.parse(localStorage.getItem('counter_stats')) || { L2R: 0, R2L: 0 };
 let intervalStayers = new Set();
 
-/* 属性 */
-let attrEnabled = false;
-let attrStats = JSON.parse(localStorage.getItem('counter_attr')) || { male:0, female:0, unknown:0, child:0, youth:0, adult:0, senior:0 };
+/* 属性（グラフは出さないがON/OFF可能） */
+let attrEnabled = localStorage.getItem('counter_attr_enabled') === '1';
 let human = null, humanReady = false;
 
-/* 集計ログ（スナップショット） */
+/* スナップショットログ */
 let logs = JSON.parse(localStorage.getItem('counter_logs')) || [];
 let LOG_INTERVAL_MS = (parseFloat(localStorage.getItem('counter_log_interval_min')) || 2) * 60000;
 let logTimerId = null;
 
 /* バックエンド他 */
-let tfBackend = localStorage.getItem('tf_backend') || 'webgl';
+let tfBackend = localStorage.getItem('counter_tf_backend') || 'webgl';
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
 
-/* === 新規：時間バケット（イベントベース加算） ===
-   Map<YYYY-MM-DD HH, {right:left, left:right}>
-*/
-let hourBins = JSON.parse(localStorage.getItem('counter_hourbins')) || {}; // { "2025-12-24 14": {right:3,left:1} }
+/* ★ 新規：通過イベントログ（イベントベース集計） */
+let passEvents = JSON.parse(localStorage.getItem('counter_events')) || []; // [{ts:number, dir:'right'|'left'}]
 
-/* === 中央線カウント安定化 === */
-let bandWidth = (parseFloat(localStorage.getItem('counter_band')) || 0.05); // 0.05 = 5%
+/* 中央線安定化 */
+let bandWidth = (parseFloat(localStorage.getItem('counter_band')) || 0.05); // 5%
 function sideOf(x) {
   if (x <= 0.5 - bandWidth) return 'L';
   if (x >= 0.5 + bandWidth) return 'R';
@@ -278,8 +256,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     await tf.setBackend(tfBackend); await tf.ready();
     model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
     document.getElementById('status').textContent = `READY (${tfBackend})`;
-    document.getElementById('backendInfo').textContent = tfBackend;
-  } catch(e){ document.getElementById('status').textContent = 'ERR: MODEL LOAD'; console.error(e); }
+  } catch(e) {
+    document.getElementById('status').textContent = 'ERR: MODEL LOAD';
+    console.error(e);
+  }
 
   initROIHandler();
   bindRange('scoreRange','scoreVal');
@@ -290,26 +270,36 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindRange('minVelRange','minVelVal');
   restoreSettings();
 
-  // 集計間隔UI
   document.getElementById('logIntervalMin').value = (LOG_INTERVAL_MS/60000).toString();
   document.getElementById('logIntervalMin').onchange = () => {
     const m = Math.max(0.5, Math.min(60, parseFloat(document.getElementById('logIntervalMin').value)));
-    LOG_INTERVAL_MS = m*60000; localStorage.setItem('counter_log_interval_min', m.toString());
+    LOG_INTERVAL_MS = m * 60000;
+    localStorage.setItem('counter_log_interval_min', m.toString());
     if (running) { stopLogTimer(); startLogTimer(); }
+  };
+
+  // 属性ON/OFFの初期反映
+  document.getElementById('attrToggle').checked = attrEnabled;
+  document.getElementById('attrToggle').onchange = async (e) => {
+    attrEnabled = e.target.checked;
+    localStorage.setItem('counter_attr_enabled', attrEnabled ? '1' : '0');
+    if (attrEnabled && !humanReady) await initHuman();
   };
 
   await populateCameras();
   renderLogTable();
 });
 
-/* ======================== Human ======================== */
+/* ======================== Human（属性推定 初回検出で加算したい場合のための準備） ======================== */
 async function initHuman(){
   if (humanReady) return;
   try{
-    const config = { backend: tfBackend, filter:{enabled:true}, face:{enabled:true, detector:{model:'blazeface', minConfidence:0.5}, mesh:{enabled:false}, description:{enabled:true}}, body:{enabled:false}, hand:{enabled:false}, gesture:{enabled:false} };
-    human = new Human(config); await human.load(); humanReady = true;
-    document.getElementById('attrStatus').textContent = 'ON';
-  }catch(e){ console.error(e); humanReady=false; document.getElementById('attrStatus').textContent='ERR'; }
+    const config = { backend: tfBackend, filter:{enabled:true},
+      face:{ enabled:true, detector:{ model:'blazeface', minConfidence:0.5 }, mesh:{enabled:false}, description:{enabled:true}},
+      body:{enabled:false}, hand:{enabled:false}, gesture:{enabled:false} };
+    human = new Human(config); await human.load();
+    humanReady = true;
+  }catch(e){ console.error('Human init error:', e); humanReady=false; }
 }
 
 /* ======================== カメラ ======================== */
@@ -325,14 +315,19 @@ async function populateCameras(){
 async function startSystem(){
   try{
     const deviceId = document.getElementById('cameraSel').value || undefined;
-    stream = await navigator.mediaDevices.getUserMedia({ video: deviceId ? { deviceId:{exact:deviceId}, width:{ideal:1280}, facingMode:"environment" } : { width:{ideal:1280}, facingMode:"environment" }, audio:false });
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: deviceId ? { deviceId:{ exact:deviceId }, width:{ ideal:1280 }, facingMode:"environment" }
+                      : { width:{ ideal:1280 }, facingMode:"environment" },
+      audio: false
+    });
     video.srcObject = stream;
     video.onloadedmetadata = ()=>{
       resize(); video.play(); running = true;
       document.getElementById('status').textContent='RUNNING';
       if (attrEnabled) initHuman();
       startLogTimer();
-      if (hasRVFC) vfcId = video.requestVideoFrameCallback(onFrame); else rafId = requestAnimationFrame(onFrameRAF);
+      if (hasRVFC) vfcId = video.requestVideoFrameCallback(onFrame);
+      else rafId = requestAnimationFrame(onFrameRAF);
     };
     document.getElementById('startBtn').disabled = true;
     document.getElementById('stopBtn').disabled  = false;
@@ -340,7 +335,7 @@ async function startSystem(){
 }
 
 function stopSystem(restart=false){
-  running = false; stopLogTimer();
+  running=false; stopLogTimer();
   if (vfcId!==null){ try{video.cancelVideoFrameCallback(vfcId);}catch{} vfcId=null; }
   if (rafId!==null){ cancelAnimationFrame(rafId); rafId=null; }
   if (stream) stream.getTracks().forEach(t=>t.stop());
@@ -356,45 +351,25 @@ async function onFrame(now){
     lastInferMs = now;
     const scoreThresh = parseFloat(document.getElementById('scoreRange').value);
     const peopleDet = await model.detect(video);
-    let facesDet = null;
-    if (attrEnabled && humanReady) facesDet = await human.detect(video);
-    updateLogic(peopleDet, scoreThresh, facesDet);
-    saveStats(); document.getElementById('logInfoMini').textContent = new Date().toLocaleTimeString();
+
+    updateLogic(peopleDet, scoreThresh);
+    saveStats();
+    document.getElementById('logInfo').textContent = `最終更新: ${new Date().toLocaleString()}`;
   }
   drawOverlay();
   vfcId = video.requestVideoFrameCallback(onFrame);
 }
 function onFrameRAF(now){ onFrame(now); rafId = requestAnimationFrame(onFrameRAF); }
 
-/* ======================== 補助関数 ======================== */
+/* ======================== マッチング/集計 ======================== */
 function iou(b1,b2){
   const [x1,y1,w1,h1]=b1,[x2,y2,w2,h2]=b2;
   const xa=Math.max(x1,x2), ya=Math.max(y1,y2), xb=Math.min(x1+w1,x2+w2), yb=Math.min(y1+h1,y2+h2);
   const inter=Math.max(0,xb-xa)*Math.max(0,yb-ya), union=w1*h1+w2*h2-inter;
   return union ? inter/union : 0;
 }
-function extractAttr(face){
-  let gender='unknown'; if (face.gender && typeof face.gender==='string'){ gender=face.gender.toLowerCase(); if (gender!=='male'&&gender!=='female') gender='unknown'; }
-  let ageEst=(typeof face.age==='number')?face.age:((typeof face.ageYears==='number')?face.ageYears:undefined);
-  const bucket = (ageEst===undefined||Number.isNaN(ageEst))?'unknown':(Math.round(ageEst)<=12?'child':(Math.round(ageEst)<=29?'youth':(Math.round(ageEst)<=64?'adult':'senior')));
-  return { gender, age:ageEst, bucket };
-}
-function hourKeyFromMs(ms){
-  const d = new Date(ms);
-  const y=d.getFullYear(), m=(d.getMonth()+1).toString().padStart(2,'0'), dd=d.getDate().toString().padStart(2,'0');
-  const hh=d.getHours().toString().padStart(2,'0');
-  return `${y}-${m}-${dd} ${hh}`;
-}
-function incrHourBin(ms, dir){ // dir: 'right' or 'left'
-  const key = hourKeyFromMs(ms);
-  if (!hourBins[key]) hourBins[key] = { right:0, left:0 };
-  if (dir==='right') hourBins[key].right++;
-  else hourBins[key].left++;
-  localStorage.setItem('counter_hourbins', JSON.stringify(hourBins));
-}
 
-/* ======================== ロジック ======================== */
-function updateLogic(detections, thresh, facesDet){
+function updateLogic(detections, thresh){
   const mode = document.getElementById('modeSel').value;
   const stayTimeLimitMs = parseInt(document.getElementById('stayTimeRange').value)*1000;
   const distLimit = parseFloat(document.getElementById('distRange').value);
@@ -404,20 +379,6 @@ function updateLogic(detections, thresh, facesDet){
   const people = detections.filter(d=>d.class==='person' && d.score>thresh);
   const unmatched = new Set(tracks.keys());
 
-  // 顔属性割当の前準備
-  const faceMap = new Map();
-  if (facesDet && facesDet.face && facesDet.face.length){
-    for (const face of facesDet.face){
-      if (!face.box) continue;
-      let bestIdx=-1,bestOv=0;
-      for (let i=0;i<people.length;i++){
-        const ov = iou([face.box[0],face.box[1],face.box[2],face.box[3]], people[i].bbox);
-        if (ov>bestOv){ bestOv=ov; bestIdx=i; }
-      }
-      if (bestIdx>=0 && bestOv>0.05) faceMap.set(bestIdx, face);
-    }
-  }
-
   for (let idx=0; idx<people.length; idx++){
     const d = people[idx];
     const nx = (d.bbox[0] + d.bbox[2]/2)/video.videoWidth;
@@ -426,7 +387,9 @@ function updateLogic(detections, thresh, facesDet){
     // マッチング
     let bestId=null, bestScore=-Infinity;
     for (const id of unmatched){
-      const t=tracks.get(id); const dist=Math.hypot(nx-t.nx, ny-t.ny); const ov=iou(d.bbox, t.bbox);
+      const t=tracks.get(id);
+      const dist=Math.hypot(nx-t.nx, ny-t.ny);
+      const ov=iou(d.bbox, t.bbox);
       const score=(1-dist)+ov;
       if (dist<=distLimit && score>bestScore){ bestScore=score; bestId=id; }
     }
@@ -435,13 +398,9 @@ function updateLogic(detections, thresh, facesDet){
       const t=tracks.get(bestId);
       const prevNX=t.nx, prevSide = sideOf(t.nx);
       t.nx=nx; t.ny=ny;
-      t.vel=((t.vel||0)*0.7) + ((nx - prevNX)*0.3); // 平滑化速度
+      t.vel=((t.vel||0)*0.7) + ((nx - prevNX)*0.3);  // 速度の平滑化
       t.bbox=d.bbox; t.lastSeen=Date.now();
 
-      // 顔属性
-      if (attrEnabled && faceMap.has(idx) && !t.attrFixed) t.attr = extractAttr(faceMap.get(idx));
-
-      // カウント判定
       if (!t.counted){
         let countedDir=null; // 'right' or 'left'
         if (mode==='midline'){
@@ -453,54 +412,39 @@ function updateLogic(detections, thresh, facesDet){
             if (prevSide==='L' && nowSide==='R' && Math.abs(t.vel)>=minVel){ stats.L2R++; countedDir='right'; }
             else if (prevSide==='R' && nowSide==='L' && Math.abs(t.vel)>=minVel){ stats.R2L++; countedDir='left'; }
           }
-        }else{ // area
+        }else{
           const inROI = (x,y)=> (x>roi.x && x<roi.x+roi.w && y>roi.y && y<roi.y+roi.h);
           const nowIn = inROI(nx, ny);
           if (!t.inArea && nowIn){ stats.L2R++; countedDir='right'; t.inArea=true; }
           else if (t.inArea && !nowIn){ t.inArea=false; }
         }
-
         if (countedDir){
-          t.counted=true;
-          incrHourBin(Date.now(), countedDir); // ★ 1時間バケットへ加算
-          if (attrEnabled && t.attr && !t.attrFixed) applyAttrCount(t); // 属性は一度だけ
+          t.counted = true;
+          // ★ イベントベース記録（時刻＋方向）
+          passEvents.push({ ts: Date.now(), dir: countedDir });
+          localStorage.setItem('counter_events', JSON.stringify(passEvents));
         }
       }
 
-      // 滞在カウント
-      if (!t.stayed && (Date.now()-t.startMs > stayTimeLimitMs)){ t.stayed=true; intervalStayers.add(t.id); }
+      if (!t.stayed && (Date.now()-t.startMs > stayTimeLimitMs)){
+        t.stayed=true; intervalStayers.add(t.id);
+      }
       unmatched.delete(bestId);
     }else{
-      // 新規トラック
-      const newTrack = {
-        nx, ny, bbox:d.bbox, startMs:Date.now(), lastSeen:Date.now(),
-        counted:false, stayed:false, inArea:false, vel:0,
-        attr:{gender:'unknown', age:undefined, bucket:'unknown'}, attrFixed:false
-      };
-      if (attrEnabled && faceMap.has(idx)) newTrack.attr = extractAttr(faceMap.get(idx));
-      tracks.set(nextId++, newTrack);
-      if (attrEnabled) applyAttrCount(newTrack); // 初回検出モード
+      tracks.set(nextId++, { nx, ny, bbox:d.bbox, startMs:Date.now(), lastSeen:Date.now(),
+        counted:false, stayed:false, inArea:false, vel:0 });
     }
   }
 
-  // 古いトラック削除
   for (const id of unmatched){ if (Date.now()-tracks.get(id).lastSeen > 3000) tracks.delete(id); }
 
   updateDisplay();
 }
 
-/* 属性加算（一度だけ） */
-function applyAttrCount(t){
-  if (!attrEnabled || t.attrFixed || !t.attr) return;
-  const g=t.attr.gender||'unknown', b=t.attr.bucket||'unknown';
-  if (g==='male') attrStats.male++; else if (g==='female') attrStats.female++; else attrStats.unknown++;
-  if (b==='child') attrStats.child++; else if (b==='youth') attrStats.youth++; else if (b==='adult') attrStats.adult++; else if (b==='senior') attrStats.senior++;
-  t.attrFixed=true; localStorage.setItem('counter_attr', JSON.stringify(attrStats));
-}
-
 /* ======================== オーバレイ描画 ======================== */
 function drawOverlay(){
-  const dMode=document.getElementById('dispModeSel').value, mode=document.getElementById('modeSel').value;
+  const dMode=document.getElementById('dispModeSel').value;
+  const mode=document.getElementById('modeSel').value;
   video.style.opacity = (dMode==='both') ? "1" : "0";
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if (dMode==='none') return;
@@ -509,7 +453,7 @@ function drawOverlay(){
   if (mode==='midline'){
     ctx.strokeStyle='rgba(0,229,255,0.5)';
     ctx.beginPath(); ctx.moveTo(canvas.width/2,0); ctx.lineTo(canvas.width/2,canvas.height); ctx.stroke();
-    // バンド表示（参考）
+    // バンド表示
     ctx.strokeStyle='rgba(0,229,255,0.2)';
     const bandPx = bandWidth * canvas.width;
     ctx.beginPath(); ctx.moveTo(canvas.width/2 - bandPx,0); ctx.lineTo(canvas.width/2 - bandPx,canvas.height); ctx.stroke();
@@ -525,10 +469,8 @@ function drawOverlay(){
     const [vx,vy,vw,vh]=t.bbox; const sx=canvas.width/video.videoWidth, sy=canvas.height/video.videoHeight;
     ctx.strokeStyle = t.stayed?'#ffcc66':'#00e5ff'; ctx.strokeRect(vx*sx,vy*sy,vw*sx,vh*sy);
     const secs=Math.floor((Date.now()-t.startMs)/1000);
-    let attrText='';
-    if (attrEnabled && t.attr){ const g=t.attr.gender||'unknown'; const age=(t.attr.age!==undefined)?Math.round(t.attr.age):'-'; const b=t.attr.bucket||'unknown'; attrText=` | ${g}/${age}/${b}`; }
     ctx.fillStyle=t.stayed?'#ffcc66':'#00e5ff'; ctx.font="10px sans-serif";
-    ctx.fillText(`ID:${t.id} ${secs}s${attrText}`, vx*sx, (vy*sy)-5);
+    ctx.fillText(`ID:${t.id} ${secs}s`, vx*sx, (vy*sy)-5);
   }
 }
 
@@ -542,15 +484,6 @@ function updateDisplay(){
   const aliveMs=Math.max(500, Math.floor((1000/fps)*2));
   document.getElementById('currentInFrame').textContent =
     Array.from(tracks.values()).filter(t=>Date.now()-t.lastSeen<aliveMs).length;
-
-  document.getElementById('attrMale').textContent = attrStats.male;
-  document.getElementById('attrFemale').textContent = attrStats.female;
-  document.getElementById('attrUnknown').textContent = attrStats.unknown;
-  document.getElementById('ageChild').textContent = attrStats.child;
-  document.getElementById('ageYouth').textContent = attrStats.youth;
-  document.getElementById('ageAdult').textContent = attrStats.adult;
-  document.getElementById('ageSenior').textContent = attrStats.senior;
-  document.getElementById('attrStatus').textContent = attrEnabled ? (humanReady ? 'ON' : 'INIT') : 'OFF';
 }
 function saveStats(){ localStorage.setItem('counter_stats', JSON.stringify(stats)); }
 
@@ -575,19 +508,19 @@ function initROIHandler(){
 /* ======================== レイアウト・設定 ======================== */
 function resize(){ canvas.width=document.getElementById('wrap').clientWidth; canvas.height=document.getElementById('wrap').clientHeight; }
 window.onresize=resize;
-
 function bindRange(id, valId){ document.getElementById(id).oninput=(e)=>{ document.getElementById(valId).textContent=e.target.value; persistSettings(); }; }
 function bindRangePct(id, valId, cb){ document.getElementById(id).oninput=(e)=>{ document.getElementById(valId).textContent=e.target.value; cb(parseFloat(e.target.value)); }; }
 function persistSettings(){
   localStorage.setItem('counter_roi', JSON.stringify(roi));
-  ['scoreRange','fpsRange','stayTimeRange','distRange','dispModeSel','modeSel','tf_backend'].forEach(id=>{
-    const val=(id==='tf_backend')?tfBackend:document.getElementById(id).value; localStorage.setItem(`counter_${id}`, val);
+  ['scoreRange','fpsRange','stayTimeRange','distRange','dispModeSel','modeSel','counter_tf_backend']
+  .forEach(id=>{
+    const val=(id==='counter_tf_backend')?tfBackend:document.getElementById(id).value;
+    localStorage.setItem(`counter_${id}`, val);
   });
 }
 function restoreSettings(){
-  ['scoreRange','fpsRange','stayTimeRange','distRange','dispModeSel','modeSel'].forEach(id=>{
-    const v=localStorage.getItem(`counter_${id}`); if (v!==null) document.getElementById(id).value=v;
-  });
+  ['scoreRange','fpsRange','stayTimeRange','distRange','dispModeSel','modeSel']
+    .forEach(id=>{ const v=localStorage.getItem(`counter_${id}`); if (v!==null) document.getElementById(id).value=v; });
   const be=localStorage.getItem('counter_tf_backend'); if (be) tfBackend=be;
 }
 
@@ -598,12 +531,10 @@ function snapshotLog(){
     score:parseFloat(document.getElementById('scoreRange').value), fps:parseInt(document.getElementById('fpsRange').value),
     staySec:parseInt(document.getElementById('stayTimeRange').value), dist:parseFloat(document.getElementById('distRange').value),
     rightFrom:stats.L2R, leftFrom:stats.R2L, stayers:intervalStayers.size,
-    male:attrStats.male, female:attrStats.female, unknown:attrStats.unknown, child:attrStats.child, youth:attrStats.youth, adult:attrStats.adult, senior:attrStats.senior,
     attrOn: attrEnabled?1:0
   };
   logs.push(row); localStorage.setItem('counter_logs', JSON.stringify(logs));
   renderLogTable();
-  document.getElementById('logInfo').textContent=`最終更新: ${new Date().toLocaleString()}`;
 }
 function renderLogTable(){
   const tbody=document.querySelector('#logTable tbody'); if(!tbody) return; tbody.innerHTML='';
@@ -619,13 +550,6 @@ function renderLogTable(){
       <td style="text-align:right;">${r.fps}</td>
       <td style="text-align:right;">${r.staySec}</td>
       <td style="text-align:right;">${r.dist}</td>
-      <td style="text-align:right;">${r.male}</td>
-      <td style="text-align:right;">${r.female}</td>
-      <td style="text-align:right;">${r.unknown}</td>
-      <td style="text-align:right;">${r.child}</td>
-      <td style="text-align:right;">${r.youth}</td>
-      <td style="text-align:right;">${r.adult}</td>
-      <td style="text-align:right;">${r.senior}</td>
       <td>${r.attrOn?'ON':'OFF'}</td>`;
     tbody.appendChild(tr);
   }
@@ -636,47 +560,79 @@ function stopLogTimer(){ if (logTimerId){ clearInterval(logTimerId); logTimerId=
 document.getElementById('exportExcelBtn').onclick = ()=>{
   snapshotLog();
   const output = logs.map(r=>({
-    "時刻":new Date(r.timestamp).toLocaleString(), "右から":r.rightFrom, "左から":r.leftFrom, "滞在検知計":r.stayers,
-    "モード":r.mode, "Score":r.score, "FPS":r.fps, "滞在(秒)":r.staySec, "追跡距離":r.dist,
-    "男性":r.male, "女性":r.female, "不明":r.unknown, "子ども":r.child, "若年":r.youth, "成人":r.adult, "高齢":r.senior, "属性ON": r.attrOn ? "ON":"OFF"
+    "時刻":new Date(r.timestamp).toLocaleString(),
+    "右から":r.rightFrom, "左から":r.leftFrom, "滞在検知計":r.stayers,
+    "モード":r.mode, "Score":r.score, "FPS":r.fps, "滞在(秒)":r.staySec, "追跡距離":r.dist, "属性ON": r.attrOn ? "ON":"OFF"
   }));
-  const ws=XLSX.utils.json_to_sheet(output,{header:["時刻","右から","左から","滞在検知計","モード","Score","FPS","滞在(秒)","追跡距離","男性","女性","不明","子ども","若年","成人","高齢","属性ON"]});
+  const ws=XLSX.utils.json_to_sheet(output,{header:["時刻","右から","左から","滞在検知計","モード","Score","FPS","滞在(秒)","追跡距離","属性ON"]});
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Log");
   XLSX.writeFile(wb, `counter_report_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
-/* ======================== モーダル：時間別棒グラフ ======================== */
+/* ======================== モーダル：時間別棒グラフ（ラベル間引き対応） ======================== */
 let hourlyChart=null;
+function bucketKey(ts, minutes){
+  const d = new Date(ts);
+  const y=d.getFullYear(), m=(d.getMonth()+1).toString().padStart(2,'0'), dd=d.getDate().toString().padStart(2,'0');
+  const hh=d.getHours().toString().padStart(2,'0');
+  const mm = Math.floor(d.getMinutes()/minutes) * minutes;
+  return `${y}-${m}-${dd} ${hh}:${mm.toString().padStart(2,'0')}`;
+}
 function buildHourlyChart(){
-  const ctx = document.getElementById('chartHourly').getContext('2d');
-  // ラベル（時系列にソート）
-  const keys = Object.keys(hourBins).sort();
-  const labels = keys.length ? keys.map(k=>k+":00") : [new Date().toLocaleTimeString()];
-  const rightVals = keys.length ? keys.map(k=>hourBins[k].right||0) : [0];
-  const leftVals  = keys.length ? keys.map(k=>hourBins[k].left||0)  : [0];
+  const bucketMin = parseInt(document.getElementById('bucketSel').value);
+  // 集計
+  const bins = new Map(); // key -> {right,left}
+  for (const ev of passEvents){
+    const k = bucketKey(ev.ts, bucketMin);
+    if (!bins.has(k)) bins.set(k, {right:0,left:0});
+    bins.get(k)[ev.dir] += 1;
+  }
+  const keys = Array.from(bins.keys()).sort();
+  const labels = keys.length ? keys.map(k=>k) : [bucketKey(Date.now(), bucketMin)];
+  const rightVals = keys.length ? keys.map(k=>bins.get(k).right) : [0];
+  const leftVals  = keys.length ? keys.map(k=>bins.get(k).left)  : [0];
 
+  // 既存破棄
+  if (hourlyChart) { try{ hourlyChart.destroy(); }catch{} hourlyChart=null; }
+
+  const ctx = document.getElementById('chartHourly').getContext('2d');
   hourlyChart = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels,
+    data: { labels,
       datasets: [
-        { label:'右から', data:rightVals, backgroundColor:'#3fd88f' },
-        { label:'左から', data:leftVals,  backgroundColor:'#00e5ff' }
+        { label:'右から', data:rightVals, backgroundColor:'#3fd88f', barPercentage:0.8, categoryPercentage:0.7 },
+        { label:'左から', data:leftVals,  backgroundColor:'#00e5ff', barPercentage:0.8, categoryPercentage:0.7 }
       ]
     },
     options: {
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ labels:{ color:'#eee' } } },
       scales:{
-        x:{ ticks:{ color:'#eee' }, grid:{ color:'#333' } },
-        y:{ ticks:{ color:'#eee' }, grid:{ color:'#333' }, beginAtZero:true, title:{display:true,text:'人数',color:'#eee'} }
+        x:{
+          ticks:{
+            color:'#eee',
+            autoSkip:true,
+            maxTicksLimit: Math.min(12, labels.length), // 最大表示ラベル数
+            callback: function(value, index){ // 動的スキップ：およそ等間隔で表示
+              const step = Math.ceil(labels.length / Math.min(12, labels.length || 1));
+              return (index % step === 0) ? this.getLabelForValue(value) : '';
+            },
+            rotation: 45
+          },
+          grid:{ color:'#333' }
+        },
+        y:{
+          ticks:{ color:'#eee' },
+          grid:{ color:'#333' },
+          beginAtZero:true,
+          title:{ display:true, text:'人数', color:'#eee' }
+        }
       }
     }
   });
 }
-function destroyHourlyChart(){ try{ hourlyChart && hourlyChart.destroy(); }catch{} hourlyChart=null; }
-function openChartsModal(){ const modal=document.getElementById('chartsModal'); destroyHourlyChart(); modal.classList.add('show'); setTimeout(buildHourlyChart,50); }
-function closeChartsModal(){ const modal=document.getElementById('chartsModal'); destroyHourlyChart(); modal.classList.remove('show'); }
+function openChartsModal(){ const modal=document.getElementById('chartsModal'); modal.classList.add('show'); setTimeout(buildHourlyChart,50); }
+function closeChartsModal(){ const modal=document.getElementById('chartsModal'); if(hourlyChart){ try{hourlyChart.destroy(); }catch{} hourlyChart=null; } modal.classList.remove('show'); }
 document.getElementById('showChartsBtn').onclick = openChartsModal;
 document.getElementById('chartsCloseBtn').onclick = closeChartsModal;
 document.getElementById('chartsModal').addEventListener('click',(e)=>{ if(e.target.id==='chartsModal') closeChartsModal(); });
@@ -687,26 +643,19 @@ document.getElementById('stopBtn').onclick  = ()=>{ stopSystem(false); };
 document.getElementById('resetDataBtn').onclick = ()=>{
   if (confirm("全てのデータを消去します。")){
     stats={L2R:0,R2L:0}; intervalStayers.clear();
-    attrStats={male:0,female:0,unknown:0,child:0,youth:0,adult:0,senior:0};
-    logs=[]; hourBins={}; saveStats();
+    logs=[]; passEvents=[];
     localStorage.setItem('counter_logs', JSON.stringify(logs));
-    localStorage.setItem('counter_hourbins', JSON.stringify(hourBins));
+    localStorage.setItem('counter_events', JSON.stringify(passEvents));
     updateDisplay(); renderLogTable(); document.getElementById('logInfo').textContent='';
   }
 };
-document.getElementById('attrToggle').onchange = async (e)=>{
-  attrEnabled=e.target.checked; localStorage.setItem('counter_attr_enabled', attrEnabled?'1':'0');
-  document.getElementById('attrStatus').textContent = attrEnabled?'ON':'OFF';
-  if (attrEnabled && !humanReady) await initHuman();
-};
-attrEnabled = localStorage.getItem('counter_attr_enabled')==='1'; document.getElementById('attrToggle').checked=attrEnabled;
-
 document.getElementById('dispModeSel').onchange=(e)=>{
-  const v=e.target.value; document.getElementById('vDisp').textContent = (v==='both')?'画像+枠':(v==='boxOnly'?'枠のみ':'非表示'); persistSettings();
+  const v=e.target.value; document.getElementById('vDisp').textContent = (v==='both')?'画像+枠':(v==='boxOnly'?'枠のみ':'非表示');
+  persistSettings();
 };
+document.getElementById('bucketSel').onchange = ()=>{ if (document.getElementById('chartsModal').classList.contains('show')) buildHourlyChart(); };
 
 function cancelVideoFrameCallback(id){ try{ video.cancelVideoFrameCallback(id); }catch{} }
 </script>
 </body>
 </html>
-``
