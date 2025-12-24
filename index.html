@@ -2,32 +2,30 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>通過カウンター Pro (シンプル軽量版)</title>
+    <title>通過カウンター Pro (完全版)</title>
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <style>
         :root { color-scheme: dark; }
-        body { font-family: system-ui, sans-serif; margin:0; background:#111; color:#eee; overflow-x: hidden; }
-        header { padding: 12px; background: #222; border-bottom: 1px solid #444; }
-        main { padding: 10px; display: flex; flex-direction: column; gap: 15px; padding-bottom: 50px; }
+        body { font-family: system-ui, sans-serif; margin:0; background:#111; color:#eee; overflow: hidden; position: fixed; width: 100%; height: 100%; }
+        header { padding: 10px 15px; background: #222; border-bottom: 1px solid #444; display: flex; justify-content: space-between; align-items: center; }
+        main { padding: 10px; display: flex; flex-direction: column; gap: 10px; height: calc(100% - 60px); overflow-y: auto; }
         .panel { background: #1e1e1e; border-radius: 8px; padding: 12px; border: 1px solid #333; }
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
-        button, select, input { padding: 12px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: 14px; width: 100%; box-sizing: border-box; }
-        button#startBtn { background: #007bff; border: none; font-weight: bold; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+        button, select, input { padding: 10px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: 13px; width: 100%; box-sizing: border-box; }
+        button#startBtn { background: #28a745; border: none; font-weight: bold; }
         button#stopBtn { background: #dc3545; border: none; }
-        .config-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; padding: 10px; background: #252525; border-radius: 6px; }
-        .config-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-        .config-row label { font-size: 12px; color: #aaa; white-space: nowrap; }
-        #wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444; }
-        video { width: 100%; height: 100%; object-fit: contain; }
-        canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
-        .line { position: absolute; top: 0; width: 2px; height: 100%; background: rgba(0,229,255,0.8); z-index: 3; display: none; }
-        .area-box { position: absolute; border: 2px dashed rgba(255,204,102,0.6); z-index: 3; display: none; pointer-events: none; }
-        .count-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .count-item { background: #252525; padding: 10px; border-radius: 6px; text-align: center; border: 1px solid #333; }
-        .count-label { font-size: 11px; color: #aaa; display: block; margin-bottom: 4px; }
-        .count-value { font-size: 26px; font-weight: bold; display: block; }
-        .ok { color: #3fd88f; }
-        .warn { color: #ffcc66; }
+        .config-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; padding: 10px; background: #252525; border-radius: 6px; }
+        .config-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+        
+        #wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444; touch-action: none; }
+        video { width: 100%; height: 100%; object-fit: cover; } /* スマホ対応: cover */
+        canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 2; }
+        
+        .count-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+        .count-item { background: #252525; padding: 8px; border-radius: 6px; text-align: center; border: 1px solid #333; }
+        .count-label { font-size: 10px; color: #aaa; display: block; }
+        .count-value { font-size: 20px; font-weight: bold; display: block; }
+        .ok { color: #3fd88f; } .warn { color: #ffcc66; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
@@ -36,60 +34,49 @@
 <body>
 
 <header>
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:bold;">通過カウンター Pro (シンプル)</span>
-        <span id="status" style="font-size:11px; color:#aaa;">モデル読込中...</span>
-    </div>
+    <span style="font-weight:bold; font-size:14px;">通過カウンター Pro</span>
+    <span id="status" style="font-size:11px; color:#aaa;">モデル読込中...</span>
 </header>
 
 <main>
     <section class="panel">
         <div class="controls">
-            <button id="startBtn">解析開始</button>
+            <button id="startBtn">開始</button>
             <button id="stopBtn" disabled>停止</button>
-            <select id="modeSel">
-                <option value="midline">中央ライン通過</option>
-                <option value="area">エリア進入</option>
-            </select>
-            <button id="exportExcelBtn" disabled>Excel出力</button>
+            <button id="exportExcelBtn">Excel</button>
         </div>
 
-        <div class="config-group">
-            <div class="config-row">
-                <label>追跡距離: <span id="trackDistVal">150</span>px</label>
-                <input type="range" id="trackDistRange" min="50" max="500" step="10" value="150">
-            </div>
-            <div class="config-row">
-                <label>滞在判定: <span id="stayTimeVal">60</span>秒</label>
-                <input type="range" id="stayTimeRange" min="30" max="300" step="10" value="60">
-            </div>
-            <div class="config-row">
-                <label>表示設定 / 感度:</label>
-                <div style="display:flex; gap:5px; width:65%;">
-                    <select id="displayMode" style="padding:6px;">
-                        <option value="both">画像＋枠</option>
-                        <option value="boxOnly">枠のみ</option>
-                        <option value="none">表示なし</option>
-                    </select>
-                    <input type="number" id="thresholdInput" value="0.5" step="0.1" min="0.1" max="0.9" style="width:60px; padding:6px;">
-                </div>
-            </div>
-        </div>
-        
         <div id="wrap">
             <video id="video" autoplay playsinline muted></video>
             <canvas id="overlay"></canvas>
-            <div id="midline" class="line"></div>
-            <div id="areaBox" class="area-box"></div>
         </div>
+        
+        <p style="font-size:10px; color:#888; margin:5px 0 0;">※画面をドラッグして検知エリアを指定できます</p>
     </section>
 
     <section class="panel">
         <div class="count-grid">
             <div class="count-item"><span class="count-label">進/入</span><span class="count-value ok" id="liveL2R">0</span></div>
             <div class="count-item"><span class="count-label">退/出</span><span class="count-value ok" id="liveR2L">0</span></div>
-            <div class="count-item"><span class="count-label">滞在判定</span><span class="count-value warn" id="liveStayers">0</span></div>
+            <div class="count-item"><span class="count-label">滞在</span><span class="count-value warn" id="liveStayers">0</span></div>
             <div class="count-item"><span class="count-label">現人数</span><span class="count-value" id="currentInFrame">0</span></div>
+        </div>
+    </section>
+
+    <section class="panel config-group">
+        <div class="config-row">
+            <label>モード:</label>
+            <select id="modeSel" style="width:60%;">
+                <option value="midline">中央ライン通過</option>
+                <option value="area">エリア進入</option>
+            </select>
+        </div>
+        <div class="config-row">
+            <label>滞在判定(秒): <span id="stayTimeVal">60</span></label>
+            <input type="range" id="stayTimeRange" min="10" max="300" step="10" value="60" style="width:60%;">
+        </div>
+        <div class="config-row">
+            <button id="resetDataBtn" style="background:#444; font-size:11px; padding:5px;">累積データ初期化</button>
         </div>
     </section>
 </main>
@@ -101,184 +88,204 @@ const canvas = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
 const tracks = new Map();
 let nextId = 1;
-let intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
-let lastAggTime = Date.now();
-const intervalHistory = [];
+let lastProcessTime = 0;
+
+// エリア指定用
+let roi = { x: 0.3, y: 0.3, w: 0.4, h: 0.4 }; // 割合で保持
+let isDragging = false;
+
+// 統計データ (LocalStorage対応)
+let stats = JSON.parse(localStorage.getItem('counter_stats')) || { L2R: 0, R2L: 0, history: [] };
+let intervalStayers = new Set();
 
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
         document.getElementById('status').textContent = '準備完了';
+        updateDisplay();
     } catch (e) {
-        document.getElementById('status').textContent = 'モデル読込失敗';
-        console.error(e);
+        document.getElementById('status').textContent = '読込失敗';
     }
+    initROIHandler();
 });
 
 async function startSystem() {
     try {
         stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment", width: { ideal: 640 } }, audio: false 
+            video: { facingMode: "environment", width: { ideal: 1280 } }, audio: false 
         });
         video.srcObject = stream;
-        
         video.onloadedmetadata = () => {
             resize();
-            updateUILayout();
             video.play();
             running = true;
             document.getElementById('status').textContent = '解析中...';
             requestAnimationFrame(mainLoop);
         };
-        
         document.getElementById('startBtn').disabled = true;
         document.getElementById('stopBtn').disabled = false;
-        document.getElementById('exportExcelBtn').disabled = false;
-    } catch (err) {
-        alert("カメラの起動に失敗しました。設定を確認してください。");
-        console.error(err);
-    }
+    } catch (err) { alert("カメラエラー"); }
 }
 
-async function mainLoop() {
+async function mainLoop(now) {
     if (!running) return;
-    
-    // パフォーマンスと安定性のために tf.engine().startScope() を利用
-    tf.engine().startScope();
-    try {
-        const threshold = parseFloat(document.getElementById('thresholdInput').value);
+
+    // 負荷軽減: 100ms(10fps)ごとに解析
+    if (now - lastProcessTime > 100) {
+        lastProcessTime = now;
+        tf.engine().startScope();
         const detections = await model.detect(video);
-        updateLogic(detections, threshold);
-        checkInterval();
-    } catch (e) {
-        console.error("ループエラー:", e);
+        updateLogic(detections);
+        saveStats();
+        tf.engine().endScope();
     }
-    tf.engine().endScope();
     
+    drawOverlay();
     requestAnimationFrame(mainLoop);
 }
 
-function updateLogic(detections, threshold) {
-    const scaleX = canvas.width / video.videoWidth;
-    const scaleY = canvas.height / video.videoHeight;
-    const midX = canvas.width / 2;
+function updateLogic(detections) {
     const mode = document.getElementById('modeSel').value;
-    const dispMode = document.getElementById('displayMode').value;
-    const trackDistLimit = parseInt(document.getElementById('trackDistRange').value);
     const stayTimeLimitMs = parseInt(document.getElementById('stayTimeRange').value) * 1000;
-    
-    // 表示モードの制御
-    video.style.visibility = (dispMode === 'both') ? 'visible' : 'hidden';
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const people = detections.filter(d => d.class === 'person' && d.score > threshold);
+    const people = detections.filter(d => d.class === 'person' && d.score > 0.5);
     const unmatched = new Set(tracks.keys());
 
     for (const d of people) {
-        const [bx, by, bw, bh] = d.bbox.map((v, i) => i % 2 === 0 ? v * scaleX : v * scaleY);
-        const cx = bx + bw / 2;
-        const cy = by + bh / 2;
+        // 座標を 0.0~1.0 の正規化座標に変換して処理
+        const nx = (d.bbox[0] + d.bbox[2]/2) / video.videoWidth;
+        const ny = (d.bbox[1] + d.bbox[3]/2) / video.videoHeight;
 
         let bestId = null;
-        let minDist = trackDistLimit;
+        let minDist = 0.15; // 追跡距離しきい値(正規化座標)
 
         for (const id of unmatched) {
             const t = tracks.get(id);
-            const dist = Math.hypot(cx - t.x, cy - t.y);
+            const dist = Math.hypot(nx - t.nx, ny - t.ny);
             if (dist < minDist) { minDist = dist; bestId = id; }
         }
 
         if (bestId !== null) {
             const t = tracks.get(bestId);
-            const prevX = t.x;
-            t.x = cx; t.y = cy; t.bbox = [bx, by, bw, bh];
+            const prevNX = t.nx;
+            t.nx = nx; t.ny = ny;
+            t.bbox = d.bbox; 
             t.lastSeen = Date.now();
             unmatched.delete(bestId);
 
             if (!t.counted) {
                 if (mode === 'midline') {
-                    if (prevX < midX && cx >= midX) { intervalStats.L2R++; t.counted = true; }
-                    else if (prevX > midX && cx <= midX) { intervalStats.R2L++; t.counted = true; }
+                    if (prevNX < 0.5 && nx >= 0.5) { stats.L2R++; t.counted = true; }
+                    else if (prevNX > 0.5 && nx <= 0.5) { stats.R2L++; t.counted = true; }
                 } else {
-                    const inA = (px, py) => (px > canvas.width*0.3 && px < canvas.width*0.7 && py > canvas.height*0.3 && py < canvas.height*0.7);
-                    if (!t.inArea && inA(cx, cy)) { intervalStats.L2R++; t.inArea = true; }
-                    else if (t.inArea && !inA(cx, cy)) { intervalStats.R2L++; t.inArea = false; }
+                    const inROI = (x, y) => (x > roi.x && x < roi.x + roi.w && y > roi.y && y < roi.y + roi.h);
+                    if (!t.inArea && inROI(nx, ny)) { stats.L2R++; t.inArea = true; }
+                    else if (t.inArea && !inROI(nx, ny)) { stats.R2L++; t.inArea = false; }
                 }
             }
             if (!t.stayed && (Date.now() - t.startMs > stayTimeLimitMs)) {
                 t.stayed = true;
-                intervalStats.stayers.add(t.id);
+                intervalStayers.add(t.id);
             }
         } else {
-            const id = nextId++;
-            tracks.set(id, { id, x: cx, y: cy, bbox: [bx, by, bw, bh], startMs: Date.now(), lastSeen: Date.now(), counted: false, stayed: false, inArea: false });
+            tracks.set(nextId++, { nx, ny, bbox: d.bbox, startMs: Date.now(), lastSeen: Date.now(), counted: false, stayed: false, inArea: false });
         }
     }
-
     for (const id of unmatched) { if (Date.now() - tracks.get(id).lastSeen > 3000) tracks.delete(id); }
-
-    // 数値の更新
-    document.getElementById('liveL2R').textContent = intervalStats.L2R;
-    document.getElementById('liveR2R').textContent = intervalStats.R2L;
-    document.getElementById('liveStayers').textContent = intervalStats.stayers.size;
-    document.getElementById('currentInFrame').textContent = Array.from(tracks.values()).filter(t => Date.now() - t.lastSeen < 500).length;
-
-    // 描画モードが none 以外なら枠を描画
-    if (dispMode !== 'none') {
-        for (const t of tracks.values()) {
-            if (Date.now() - t.lastSeen > 500) continue;
-            ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(...t.bbox);
-            ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-            ctx.font = "bold 14px sans-serif";
-            ctx.fillText(`${t.stayed ? '滞在' : 'ID:'+t.id} (${Math.floor((Date.now()-t.startMs)/1000)}s)`, t.bbox[0], t.bbox[1]-8);
-        }
-    }
+    updateDisplay();
 }
 
-function checkInterval() {
-    if (Date.now() - lastAggTime > 60000) { 
-        const now = new Date();
-        const time = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
-        intervalHistory.push({ time, l2r: intervalStats.L2R, r2l: intervalStats.R2L, stay: intervalStats.stayers.size });
-        
-        intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
-        lastAggTime = Date.now();
-    }
-}
-
-function updateUILayout() {
+function drawOverlay() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     const mode = document.getElementById('modeSel').value;
-    document.getElementById('midline').style.display = (mode === 'midline') ? 'block' : 'none';
-    document.getElementById('midline').style.left = '50%';
-    const ab = document.getElementById('areaBox');
-    ab.style.display = (mode === 'area') ? 'block' : 'none';
-    ab.style.left = '30%'; ab.style.top = '30%'; ab.style.width = '40%'; ab.style.height = '40%';
+
+    // ガイドライン描画
+    ctx.lineWidth = 2;
+    if (mode === 'midline') {
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.8)';
+        ctx.beginPath(); ctx.moveTo(canvas.width/2, 0); ctx.lineTo(canvas.width/2, canvas.height); ctx.stroke();
+    } else {
+        ctx.strokeStyle = 'rgba(255, 204, 102, 0.8)';
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(roi.x * canvas.width, roi.y * canvas.height, roi.w * canvas.width, roi.h * canvas.height);
+        ctx.setLineDash([]);
+    }
+
+    // 物体枠描画
+    for (const t of tracks.values()) {
+        if (Date.now() - t.lastSeen > 500) continue;
+        const [vx, vy, vw, vh] = t.bbox;
+        const sx = canvas.width / video.videoWidth;
+        const sy = canvas.height / video.videoHeight;
+        
+        ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
+        ctx.strokeRect(vx * sx, vy * sy, vw * sx, vh * sy);
+    }
+}
+
+function updateDisplay() {
+    document.getElementById('liveL2R').textContent = stats.L2R;
+    document.getElementById('liveR2L').textContent = stats.R2L;
+    document.getElementById('liveStayers').textContent = intervalStayers.size;
+    document.getElementById('currentInFrame').textContent = Array.from(tracks.values()).filter(t => Date.now() - t.lastSeen < 500).length;
+}
+
+function saveStats() {
+    localStorage.setItem('counter_stats', JSON.stringify(stats));
+}
+
+// エリア指定（ドラッグ操作）
+function initROIHandler() {
+    let startX, startY;
+    const handleStart = (e) => {
+        isDragging = true;
+        const rect = canvas.getBoundingClientRect();
+        startX = ((e.clientX || e.touches[0].clientX) - rect.left) / canvas.width;
+        startY = ((e.clientY || e.touches[0].clientY) - rect.top) / canvas.height;
+    };
+    const handleMove = (e) => {
+        if (!isDragging) return;
+        const rect = canvas.getBoundingClientRect();
+        let curX = ((e.clientX || e.touches[0].clientX) - rect.left) / canvas.width;
+        let curY = ((e.clientY || e.touches[0].clientY) - rect.top) / canvas.height;
+        roi.x = Math.min(startX, curX);
+        roi.y = Math.min(startY, curY);
+        roi.w = Math.abs(curX - startX);
+        roi.h = Math.abs(curY - startY);
+    };
+    canvas.addEventListener('mousedown', handleStart);
+    canvas.addEventListener('touchstart', handleStart);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('touchmove', handleMove);
+    window.addEventListener('mouseup', () => isDragging = false);
+    window.addEventListener('touchend', () => isDragging = false);
 }
 
 document.getElementById('startBtn').onclick = startSystem;
 document.getElementById('stopBtn').onclick = () => {
-    running = false; 
-    if(stream) stream.getTracks().forEach(t => t.stop());
-    document.getElementById('startBtn').disabled = false; 
-    document.getElementById('stopBtn').disabled = true;
-    document.getElementById('status').textContent = '停止中';
+    running = false; if(stream) stream.getTracks().forEach(t => t.stop());
+    document.getElementById('startBtn').disabled = false; document.getElementById('stopBtn').disabled = true;
+};
+document.getElementById('resetDataBtn').onclick = () => {
+    if(confirm("データを初期化しますか？")) {
+        stats = { L2R: 0, R2L: 0, history: [] };
+        intervalStayers.clear();
+        saveStats(); updateDisplay();
+    }
 };
 document.getElementById('exportExcelBtn').onclick = () => {
-    const ws = XLSX.utils.json_to_sheet(intervalHistory);
+    const data = [{ "進/入": stats.L2R, "退/出": stats.R2L, "滞在検知累計": intervalStayers.size }];
+    const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Log");
-    XLSX.writeFile(wb, `count_report_${Date.now()}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `counter_${new Date().getTime()}.xlsx`);
 };
+
 function resize() {
     canvas.width = document.getElementById('wrap').clientWidth;
     canvas.height = document.getElementById('wrap').clientHeight;
 }
 window.onresize = resize;
-document.getElementById('trackDistRange').oninput = (e) => document.getElementById('trackDistVal').textContent = e.target.value;
 document.getElementById('stayTimeRange').oninput = (e) => document.getElementById('stayTimeVal').textContent = e.target.value;
-document.getElementById('modeSel').onchange = updateUILayout;
 </script>
 </body>
 </html>
