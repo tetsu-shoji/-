@@ -3,7 +3,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>通過カウンター Pro 2025（属性表示復活・厳密カウント・可変集計）</title>
+  <title>通過カウンター Pro 2025（堅牢カメラ取得・属性表示・厳密カウント）</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <style>
     :root { color-scheme: dark; --accent: #00e5ff; }
@@ -16,7 +16,7 @@
     button, select, input { padding: 10px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: 13px; width: 100%; box-sizing: border-box; }
     button#startBtn { background: #28a745; border: none; font-weight: bold; }
     button#stopBtn  { background: #dc3545; border: none; }
-    .small-btn { padding: 5px; font-size: 10px; background: #444; border: none; }
+    .small-btn { padding: 6px 10px; font-size: 11px; background: #444; border: 1px solid #555; border-radius: 6px; }
 
     #wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444; touch-action: none; }
     video  { width: 100%; height: 100%; object-fit: cover; transition: opacity 0.3s; }
@@ -28,7 +28,7 @@
     .count-value { font-size: 20px; font-weight: bold; display: block; }
     .ok { color: #3fd88f; } .warn { color: #ffcc66; }
 
-    /* 属性集計カード（復活） */
+    /* 属性集計カード */
     .attr-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
     .attr-item { background: #252525; padding: 8px; border-radius: 6px; text-align: center; border: 1px solid #333; }
     .attr-label { font-size: 10px; color: #aaa; display: block; }
@@ -41,6 +41,10 @@
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { border: 1px solid #333; padding: 6px; }
     thead tr { background: #222; }
+
+    /* カメラUI行 */
+    .camera-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .camera-row > * { margin: 2px 0; }
   </style>
 
   <!-- 正しい script タグ -->
@@ -52,15 +56,32 @@
 <body>
 
 <header>
-  <span style="font-weight:bold; font-size:14px;">通過カウンター Pro 2025</span>
-  <span id="status" style="font-size:11px; color:#aaa;">モデル読込中...</span>
-  <div style="display:flex; gap:6px; align-items:center; flex-wrap: wrap;">
-    <label style="font-size:11px;"><input type="checkbox" id="attrToggle" /> 属性集計（年齢層・男女）ON/OFF</label>
-    <div style="display:flex; align-items:center; gap:6px;">
-      <label style="font-size:11px;">集計間隔（分）</label>
-      <input type="number" id="logIntervalMin" min="0.5" max="60" step="0.5" value="2" style="width:90px;">
-    </div>
-    <select id="cameraSel" style="max-width:280px"></select>
+  <div style="display:flex; gap:10px; align-items:center;">
+    <span style="font-weight:bold; font-size:14px;">通過カウンター Pro 2025</span>
+    <span id="status" style="font-size:11px; color:#aaa;">モデル読込中...</span>
+  </div>
+
+  <!-- ▼ カメラ選択 UI（スマホのフロント/バック・PCのdeviceId） -->
+  <div class="camera-row">
+    <label style="font-size:11px;">属性集計</label>
+    <label style="font-size:11px;"><input type="checkbox" id="attrToggle" /> ON/OFF</label>
+
+    <label style="font-size:11px;">集計間隔（分）</label>
+    <input type="number" id="logIntervalMin" min="0.5" max="60" step="0.5" value="2" style="width:90px;">
+
+    <button id="refreshCamBtn" class="small-btn">カメラ再検出</button>
+
+    <label style="font-size:11px;">facingMode優先</label>
+    <label style="font-size:11px;"><input type="checkbox" id="useFacingModeToggle" checked>（スマホで推奨）</label>
+    <select id="facingSel" style="width:140px;">
+      <option value="environment" selected>バック（外側）</option>
+      <option value="user">フロント（内側）</option>
+    </select>
+
+    <label style="font-size:11px;">デバイス選択（PC/機種別）</label>
+    <select id="cameraSel" style="max-width:280px">
+      <option value="">未検出（開始で許可→再検出を押下）</option>
+    </select>
   </div>
 </header>
 
@@ -77,7 +98,7 @@
       <canvas id="overlay"></canvas>
     </div>
     <small style="display:block; margin-top:6px; color:#aaa;">
-      ※端末内でのみ推論を行い、映像・画像は保存しません。属性推定を行う場合は現地掲示・同意取得・保存期間／削除手順に従って運用してください。
+      ※必ず <b>HTTPS</b> でアクセスしてください（localhost除く）。端末内のみ推論し、映像は保存しません。
     </small>
   </section>
 
@@ -90,7 +111,7 @@
       <div class="count-item"><span class="count-label">現人数</span><span class="count-value" id="currentInFrame">0</span></div>
     </div>
 
-    <!-- ▼ 属性集計カード（復活／グラフなし） -->
+    <!-- 属性集計カード -->
     <div class="attr-grid">
       <div class="attr-item"><span class="attr-label">推定：男性</span><span class="attr-value" id="attrMale">0</span></div>
       <div class="attr-item"><span class="attr-label">推定：女性</span><span class="attr-value" id="attrFemale">0</span></div>
@@ -139,7 +160,6 @@
         <input type="range" id="fpsRange" min="1" max="30" step="1" value="10">
       </div>
 
-      <!-- 中央線安定化（復活） -->
       <div class="config-item">
         <label>中央ライン バンド幅(%)：<span id="bandVal">5</span></label>
         <input type="range" id="bandRange" min="1" max="20" step="1" value="5">
@@ -192,16 +212,13 @@
 </main>
 
 <script>
-/* ======================== グローバル ======================== */
-let model, stream, running = false;
+/* ====== グローバル ====== */
+let model, stream = null, running = false;
 const video  = document.getElementById('video');
 const canvas = document.getElementById('overlay');
 const ctx    = canvas.getContext('2d');
-
 const tracks = new Map();
-let nextId = 1;
-let vfcId = null, rafId = null;
-let lastInferMs = 0;
+let nextId = 1, vfcId = null, rafId = null, lastInferMs = 0;
 
 let roi = JSON.parse(localStorage.getItem('counter_roi')) || { x: 0.3, y: 0.3, w: 0.4, h: 0.4 };
 let isDragging = false;
@@ -209,36 +226,40 @@ let isDragging = false;
 let stats = JSON.parse(localStorage.getItem('counter_stats')) || { L2R: 0, R2L: 0 };
 let intervalStayers = new Set();
 
-/* 属性（表示復活） */
 let attrEnabled = localStorage.getItem('counter_attr_enabled') === '1';
 let attrStats = JSON.parse(localStorage.getItem('counter_attr')) || {
-  male: 0, female: 0, unknown: 0,
-  child: 0, youth: 0, adult: 0, senior: 0
+  male:0, female:0, unknown:0, child:0, youth:0, adult:0, senior:0
 };
 let human = null, humanReady = false;
-
-/* 属性カウントのタイミング（初回検出） */
 const ATTR_COUNT_MODE = "firstSeen";
 
-/* スナップショットログ */
 let logs = JSON.parse(localStorage.getItem('counter_logs')) || [];
 let LOG_INTERVAL_MS = (parseFloat(localStorage.getItem('counter_log_interval_min')) || 2) * 60000;
 let logTimerId = null;
 
-/* バックエンド他 */
 let tfBackend = localStorage.getItem('counter_tf_backend') || 'webgl';
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
 
-/* 中央線安定化 */
 let bandWidth = (parseFloat(localStorage.getItem('counter_band')) || 0.05); // 5%
+
+/* ====== HTTPSチェック ====== */
+function requireHTTPS() {
+  const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (!isLocalhost && location.protocol !== 'https:') {
+    alert('このページは HTTPS でアクセスしてください（スマホ/PCのカメラ取得には必須）。\n例: https://your-site/...  ※localhostは例外');
+  }
+}
+
+/* ====== 側判定（バンド幅） ====== */
 function sideOf(x) {
   if (x <= 0.5 - bandWidth) return 'L';
   if (x >= 0.5 + bandWidth) return 'R';
   return 'C';
 }
 
-/* ======================== 初期化 ======================== */
+/* ====== 初期化 ====== */
 window.addEventListener('DOMContentLoaded', async () => {
+  requireHTTPS();
   try {
     await tf.setBackend(tfBackend); await tf.ready();
     model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
@@ -266,7 +287,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (running) { stopLogTimer(); startLogTimer(); }
   };
 
-  // 属性ON/OFFの初期反映（表示復活）
+  // 属性ON/OFF
   document.getElementById('attrToggle').checked = attrEnabled;
   document.getElementById('attrToggle').onchange = async (e) => {
     attrEnabled = e.target.checked;
@@ -275,81 +296,123 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (attrEnabled && !humanReady) await initHuman();
   };
 
-  await populateCameras();
+  // カメラ列挙
+  await populateCamerasRobust();
+
+  // イベント
+  document.getElementById('refreshCamBtn').onclick = populateCamerasRobust;
+  document.getElementById('cameraSel').onchange = () => { if (running) stopSystem(true); startSystem(); };
+  document.getElementById('useFacingModeToggle').onchange = () => { if (running) stopSystem(true); startSystem(); };
+  document.getElementById('facingSel').onchange = () => { if (running) stopSystem(true); startSystem(); };
+
+  document.getElementById('startBtn').onclick = startSystem;
+  document.getElementById('stopBtn').onclick  = () => { stopSystem(false); };
+  document.getElementById('resetDataBtn').onclick = resetAll;
+
   renderLogTable();
-  updateDisplay();  // ← 属性表示を初期描画
+  updateDisplay();
 });
 
-/* ======================== Human（属性推定） ======================== */
-async function initHuman(){
-  if (humanReady) return;
-  try{
-    const config = {
-      backend: tfBackend,
-      filter: { enabled: true },
-      face: {
-        enabled: true,
-        detector: { model: 'blazeface', minConfidence: 0.5 },
-        mesh: { enabled: false },
-        description: { enabled: true } // 年齢・性別
-      },
-      body: { enabled: false },
-      hand: { enabled: false },
-      gesture: { enabled: false }
-    };
-    human = new Human(config);
-    await human.load();
-    humanReady = true;
-    document.getElementById('attrStatus').textContent = 'ON';
-  }catch(e){
-    console.error('Human init error:', e);
-    humanReady = false;
-    document.getElementById('attrStatus').textContent = 'ERR';
+/* ====== カメラ列挙（許可→停止→列挙） ====== */
+async function populateCamerasRobust() {
+  try {
+    const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    tmp.getTracks().forEach(t => t.stop());
+  } catch (e) {
+    console.warn('初回許可取得に失敗（列挙は継続）:', e);
+  }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const cams = devices.filter(d => d.kind === 'videoinput');
+  const sel = document.getElementById('cameraSel');
+  sel.innerHTML = cams.length
+    ? cams.map(d => `<option value="${d.deviceId}">${d.label || 'Camera'}</option>`).join('')
+    : `<option value="">（カメラ未検出）</option>`;
+}
+
+/* ====== ストリーム取得（段階的フォールバック） ====== */
+async function getStreamPreferFacingMode() {
+  const facing = document.getElementById('facingSel').value; // 'environment' or 'user'
+  const primary = { video: { facingMode: { exact: facing }, width: { ideal: 1280 } }, audio: false };
+  const fallback = { video: { facingMode: facing, width: { ideal: 1280 } }, audio: false };
+  try { return await navigator.mediaDevices.getUserMedia(primary); }
+  catch(e1) {
+    console.warn('facingMode exact 失敗:', e1);
+    try { return await navigator.mediaDevices.getUserMedia(fallback); }
+    catch(e2) {
+      console.warn('facingMode fallback 失敗:', e2);
+      return await getStreamByDeviceId(); // 最終フォールバック
+    }
+  }
+}
+async function getStreamByDeviceId() {
+  const deviceId = document.getElementById('cameraSel').value || undefined;
+  const constraints = {
+    video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 1280 } }
+                    : { width: { ideal: 1280 } },
+    audio: false
+  };
+  try { return await navigator.mediaDevices.getUserMedia(constraints); }
+  catch(e) {
+    console.warn('deviceId指定 失敗:', e);
+    // 最後の手段：最小構成
+    return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
   }
 }
 
-/* ======================== カメラ ======================== */
-async function populateCameras(){
-  try{ await navigator.mediaDevices.getUserMedia({video:true,audio:false}).then(s=>s.getTracks().forEach(t=>t.stop())); }catch{}
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const cams = devices.filter(d=>d.kind==='videoinput');
-  const sel = document.getElementById('cameraSel');
-  sel.innerHTML = cams.map(d=>`<option value="${d.deviceId}">${d.label||'Camera'}</option>`).join('');
-  sel.onchange = ()=>{ if(running) stopSystem(true); startSystem(); };
-}
+/* ====== 開始/停止 ====== */
+async function startSystem() {
+  try {
+    if (stream) stream.getTracks().forEach(t => t.stop());
 
-async function startSystem(){
-  try{
-    const deviceId = document.getElementById('cameraSel').value || undefined;
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: deviceId ? { deviceId:{ exact:deviceId }, width:{ ideal:1280 }, facingMode:"environment" }
-                      : { width:{ ideal:1280 }, facingMode:"environment" },
-      audio: false
-    });
+    const preferFacing = document.getElementById('useFacingModeToggle').checked;
+    stream = preferFacing ? await getStreamPreferFacingMode() : await getStreamByDeviceId();
+
     video.srcObject = stream;
-    video.onloadedmetadata = ()=>{
+    video.onloadedmetadata = () => {
       resize(); video.play(); running = true;
-      document.getElementById('status').textContent='RUNNING';
-      if (attrEnabled) initHuman();
+      document.getElementById('status').textContent = 'RUNNING';
+
+      if (attrEnabled && !humanReady) initHuman();
       startLogTimer();
+
       if (hasRVFC) vfcId = video.requestVideoFrameCallback(onFrame);
       else rafId = requestAnimationFrame(onFrameRAF);
     };
+
     document.getElementById('startBtn').disabled = true;
     document.getElementById('stopBtn').disabled  = false;
-  }catch(err){ alert("カメラアクセスが拒否されました"); }
+  } catch (err) {
+    console.error('カメラ取得失敗:', err);
+    alert('カメラを取得できませんでした。\n1) HTTPSでアクセスしているか\n2) ブラウザのカメラ許可がONか\n3) 他アプリがカメラを占有していないか\n\n機種によっては「facingMode優先」をOFFにして、デバイス選択から試してください。');
+  }
 }
-
-function stopSystem(restart=false){
-  running=false; stopLogTimer();
-  if (vfcId!==null){ try{video.cancelVideoFrameCallback(vfcId);}catch{} vfcId=null; }
-  if (rafId!==null){ cancelAnimationFrame(rafId); rafId=null; }
-  if (stream) stream.getTracks().forEach(t=>t.stop());
+function stopSystem(restart=false) {
+  running = false;
+  stopLogTimer();
+  try { if (vfcId !== null) { video.cancelVideoFrameCallback(vfcId); vfcId = null; } } catch {}
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch {} stream = null; }
   document.getElementById('startBtn').disabled = !!restart;
   document.getElementById('stopBtn').disabled  = true;
 }
 
-/* ======================== 推論ループ ======================== */
+/* ====== Human（属性推定） ====== */
+async function initHuman(){
+  if (humanReady) return;
+  try{
+    const config = {
+      backend: tfBackend, filter:{enabled:true},
+      face:{ enabled:true, detector:{ model:'blazeface', minConfidence:0.5 }, mesh:{enabled:false}, description:{enabled:true}},
+      body:{enabled:false}, hand:{enabled:false}, gesture:{enabled:false}
+    };
+    human = new Human(config); await human.load();
+    humanReady = true;
+    document.getElementById('attrStatus').textContent = 'ON';
+  }catch(e){ console.error('Human init error:', e); humanReady=false; document.getElementById('attrStatus').textContent='ERR'; }
+}
+
+/* ====== 推論ループ ====== */
 async function onFrame(now){
   if (!running) return;
   const fpsLimit = 1000 / parseInt(document.getElementById('fpsRange').value);
@@ -358,17 +421,16 @@ async function onFrame(now){
     const scoreThresh = parseFloat(document.getElementById('scoreRange').value);
     const peopleDet = await model.detect(video);
     let facesDet = null;
-    if (attrEnabled && humanReady) facesDet = await human.detect(video);
+    if (attrEnabled && humanReady) { facesDet = await human.detect(video); }
     updateLogic(peopleDet, scoreThresh, facesDet);
-    saveStats();
-    document.getElementById('logInfoMini').textContent = new Date().toLocaleTimeString();
+    saveStats(); document.getElementById('logInfoMini').textContent = new Date().toLocaleTimeString();
   }
   drawOverlay();
   vfcId = video.requestVideoFrameCallback(onFrame);
 }
 function onFrameRAF(now){ onFrame(now); rafId = requestAnimationFrame(onFrameRAF); }
 
-/* ======================== マッチング/集計 ======================== */
+/* ====== マッチング/集計（中央線安定化つき） ====== */
 function iou(b1,b2){
   const [x1,y1,w1,h1]=b1,[x2,y2,w2,h2]=b2;
   const xa=Math.max(x1,x2), ya=Math.max(y1,y2), xb=Math.min(x1+w1,x2+w2), yb=Math.min(y1+h1,y2+h2);
@@ -383,7 +445,6 @@ function extractAttr(face){
   }
   let ageEst = (face && typeof face.age === 'number') ? face.age
               : (face && typeof face.ageYears === 'number') ? face.ageYears : undefined;
-  // 4区分
   let bucket = 'unknown';
   if (ageEst !== undefined && !Number.isNaN(ageEst)) {
     const a = Math.round(ageEst);
@@ -435,13 +496,11 @@ function updateLogic(detections, thresh, facesDet){
       const t=tracks.get(bestId);
       const prevNX=t.nx, prevSide = sideOf(t.nx);
       t.nx=nx; t.ny=ny;
-      t.vel=((t.vel||0)*0.7) + ((nx - prevNX)*0.3); // 速度の平滑化
+      t.vel=((t.vel||0)*0.7) + ((nx - prevNX)*0.3); // 速度平滑化
       t.bbox=d.bbox; t.lastSeen=Date.now();
 
-      // 属性（初回検出で取得できたら保持）
-      if (attrEnabled && faceMap.has(idx) && !t.attrFixed) {
-        t.attr = extractAttr(faceMap.get(idx));
-      }
+      // 属性（初回検出）
+      if (attrEnabled && faceMap.has(idx) && !t.attrFixed) { t.attr = extractAttr(faceMap.get(idx)); }
 
       // カウント判定
       if (!t.counted){
@@ -456,27 +515,24 @@ function updateLogic(detections, thresh, facesDet){
             else if (prevSide==='R' && nowSide==='L' && Math.abs(t.vel)>=minVel){ stats.R2L++; countedNow = true; }
           }
         }else{ // area
-          const inROI = (x,y)=> (x>roi.x && x<roi.x+roi.w && y>roi.y && y<roi.y+roi.h);
+          const iny+roi.h);
           const nowIn = inROI(nx, ny);
           if (!t.inArea && nowIn){ stats.L2R++; countedNow = true; t.inArea=true; }
           else if (t.inArea && !nowIn){ t.inArea=false; }
         }
         if (countedNow){
           t.counted = true;
-          if (attrEnabled && t.attr && !t.attrFixed && ATTR_COUNT_MODE === "cross") applyAttrCount(t); // crossモードの場合
+          if (ATTR_COUNT_MODE === "cross" && attrEnabled && t.attr && !t.attrFixed) applyAttrCount(t);
         }
       }
 
-      // 初回検出モードなら、属性は最初に一度だけ加算
       if (ATTR_COUNT_MODE === "firstSeen" && attrEnabled && t.attr && !t.attrFixed) applyAttrCount(t);
 
-      // 滞在判定
       if (!t.stayed && (Date.now()-t.startMs > stayTimeLimitMs)){
         t.stayed=true; intervalStayers.add(t.id);
       }
       unmatched.delete(bestId);
     }else{
-      // 新規トラック
       const nt = {
         nx, ny, bbox:d.bbox, startMs:Date.now(), lastSeen:Date.now(),
         counted:false, stayed:false, inArea:false, vel:0,
@@ -484,34 +540,26 @@ function updateLogic(detections, thresh, facesDet){
       };
       if (attrEnabled && faceMap.has(idx)) nt.attr = extractAttr(faceMap.get(idx));
       tracks.set(nextId++, nt);
-      if (ATTR_COUNT_MODE === "firstSeen" && attrEnabled) applyAttrCount(nt); // 初回検出で加算
+      if (ATTR_COUNT_MODE === "firstSeen" && attrEnabled) applyAttrCount(nt);
     }
   }
 
   // 古いトラック削除
   for (const id of unmatched){ if (Date.now()-tracks.get(id).lastSeen > 3000) tracks.delete(id); }
-
   updateDisplay();
 }
 
-/* 属性加算（重複防止のため一度だけ） */
+/* ====== 属性加算（一度だけ） ====== */
 function applyAttrCount(t){
   if (!attrEnabled || t.attrFixed || !t.attr) return;
   const g=t.attr.gender||'unknown', b=t.attr.bucket||'unknown';
-  if (g==='male') attrStats.male++;
-  else if (g==='female') attrStats.female++;
-  else attrStats.unknown++;
-
-  attrStats.youth++;
-  else if (b==='adult') attrStats.adult++;
-  else if (b==='senior') attrStats.senior++;
-  // 年齢unknownは年齢層に加算しない
-
+  if (g==='male') attrStats.male++; else if (g==='female') attrStats.female++; else attrStats.unknown++;
+  if (b==='child') attrStats.child++; else if (b==='youth') attrStats.youth++; else if (b==='adult') attrStats.adult++; else if (b==='senior') attrStats.senior++;
   t.attrFixed=true;
   localStorage.setItem('counter_attr', JSON.stringify(attrStats));
 }
 
-/* ======================== オーバレイ描画 ======================== */
+/* ====== オーバレイ描画 ====== */
 function drawOverlay(){
   const dMode=document.getElementById('dispModeSel').value;
   const mode=document.getElementById('modeSel').value;
@@ -523,7 +571,7 @@ function drawOverlay(){
   if (mode==='midline'){
     ctx.strokeStyle='rgba(0,229,255,0.5)';
     ctx.beginPath(); ctx.moveTo(canvas.width/2,0); ctx.lineTo(canvas.width/2,canvas.height); ctx.stroke();
-    // バンド表示（参考）
+    // バンド表示
     ctx.strokeStyle='rgba(0,229,255,0.2)';
     const bandPx = bandWidth * canvas.width;
     ctx.beginPath(); ctx.moveTo(canvas.width/2 - bandPx,0); ctx.lineTo(canvas.width/2 - bandPx,canvas.height); ctx.stroke();
@@ -546,20 +594,18 @@ function drawOverlay(){
   }
 }
 
-/* ======================== 表示＆保存（属性表示復活） ======================== */
+/* ====== 表示＆保存 ====== */
 function updateDisplay(){
-  // カウンタ
   document.getElementById('liveL2R').textContent = stats.L2R;
   document.getElementById('liveR2L').textContent = stats.R2L;
   document.getElementById('liveStayers').textContent = intervalStayers.size;
 
-  // 現在フレーム人数（FPSに応じて）
   const fps=parseInt(document.getElementById('fpsRange').value);
   const aliveMs=Math.max(500, Math.floor((1000/fps)*2));
   document.getElementById('currentInFrame').textContent =
     Array.from(tracks.values()).filter(t=>Date.now()-t.lastSeen<aliveMs).length;
 
-  // ▼ 属性カードの表示更新
+  // 属性カード
   document.getElementById('attrMale').textContent   = attrStats.male;
   document.getElementById('attrFemale').textContent = attrStats.female;
   document.getElementById('attrUnknown').textContent= attrStats.unknown;
@@ -571,7 +617,7 @@ function updateDisplay(){
 }
 function saveStats(){ localStorage.setItem('counter_stats', JSON.stringify(stats)); }
 
-/* ======================== ROIドラッグ ======================== */
+/* ====== ROIドラッグ ====== */
 function initROIHandler(){
   let startX,startY;
   const handleStart=(e)=>{ if (document.getElementById('modeSel').value!=='area') return;
@@ -589,7 +635,7 @@ function initROIHandler(){
   window.addEventListener('touchend',()=>{ isDragging=false; persistSettings(); });
 }
 
-/* ======================== レイアウト・設定 ======================== */
+/* ====== レイアウト/設定 ====== */
 function resize(){ canvas.width=document.getElementById('wrap').clientWidth; canvas.height=document.getElementById('wrap').clientHeight; }
 window.onresize=resize;
 function bindRange(id, valId){ document.getElementById(id).oninput=(e)=>{ document.getElementById(valId).textContent=e.target.value; persistSettings(); }; }
@@ -608,7 +654,7 @@ function restoreSettings(){
   const be=localStorage.getItem('counter_tf_backend'); if (be) tfBackend=be;
 }
 
-/* ======================== スナップショット/テーブル/Excel ======================== */
+/* ====== スナップショット/テーブル/Excel ====== */
 function snapshotLog(){
   const row = {
     timestamp:new Date().toISOString(), mode:document.getElementById('modeSel').value,
@@ -640,7 +686,6 @@ function renderLogTable(){
 }
 function startLogTimer(){ if (logTimerId) clearInterval(logTimerId); logTimerId = setInterval(()=>{ if(running) snapshotLog(); }, LOG_INTERVAL_MS); }
 function stopLogTimer(){ if (logTimerId){ clearInterval(logTimerId); logTimerId=null; } }
-
 document.getElementById('exportExcelBtn').onclick = ()=>{
   snapshotLog();
   const output = logs.map(r=>({
@@ -653,10 +698,8 @@ document.getElementById('exportExcelBtn').onclick = ()=>{
   XLSX.writeFile(wb, `counter_report_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
-/* ======================== ボタン等 ======================== */
-document.getElementById('startBtn').onclick = startSystem;
-document.getElementById('stopBtn').onclick  = ()=>{ stopSystem(false); };
-document.getElementById('resetDataBtn').onclick = ()=>{
+/* ====== リセット ====== */
+function resetAll(){
   if (confirm("全てのデータを消去します。")){
     stats={L2R:0,R2L:0}; intervalStayers.clear();
     attrStats={male:0,female:0,unknown:0,child:0,youth:0,adult:0,senior:0};
@@ -665,12 +708,9 @@ document.getElementById('resetDataBtn').onclick = ()=>{
     localStorage.setItem('counter_logs', JSON.stringify(logs));
     updateDisplay(); renderLogTable(); document.getElementById('logInfo').textContent='';
   }
-};
-document.getElementById('dispModeSel').onchange=(e)=>{
-  const v=e.target.value; document.getElementById('vDisp').textContent = (v==='both')?'画像+枠':(v==='boxOnly'?'枠のみ':'非表示');
-  persistSettings();
-};
+}
 
+/* ====== ユーティリティ ====== */
 function cancelVideoFrameCallback(id){ try{ video.cancelVideoFrameCallback(id); }catch{} }
 </script>
 </body>
