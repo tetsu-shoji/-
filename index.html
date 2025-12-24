@@ -3,7 +3,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>通過カウンター Pro 2025（堅牢カメラ取得／属性表示／厳密カウント）</title>
+  <title>通過カウンター Pro 2025（Human mediapipe最適化／属性再試行）</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <style>
     :root { color-scheme: dark; --accent:#00e5ff; }
@@ -16,29 +16,35 @@
     button#startBtn { background:#28a745; border:none; font-weight:bold; }
     button#stopBtn  { background:#dc3545; border:none; }
     .small-btn { padding:6px 10px; font-size:11px; background:#444; border:1px solid #555; border-radius:6px; }
+
     #wrap   { position:relative; width:100%; aspect-ratio:16/9; background:#000; border-radius:6px; overflow:hidden; border:1px solid #444; touch-action:none; }
     video   { width:100%; height:100%; object-fit:cover; transition:opacity .3s; }
     canvas  { position:absolute; left:0; top:0; width:100%; height:100%; z-index:2; }
+
     .count-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
     .count-item { background:#252525; padding:8px; border-radius:6px; text-align:center; border:1px solid #333; }
     .count-label { font-size:10px; color:#aaa; display:block; }
     .count-value { font-size:20px; font-weight:bold; display:block; }
     .ok { color:#3fd88f; } .warn { color:#ffcc66; }
+
     .attr-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-top:8px; }
     .attr-item { background:#252525; padding:8px; border-radius:6px; text-align:center; border:1px solid #333; }
     .attr-label { font-size:10px; color:#aaa; display:block; }
     .attr-value { font-size:18px; font-weight:bold; display:block; }
+
     .config-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
     .config-item { display:flex; flex-direction:column; gap:4px; }
     .config-item label { font-size:11px; color:#aaa; }
+
     table { width:100%; border-collapse:collapse; font-size:12px; }
     th,td { border:1px solid #333; padding:6px; }
     thead tr { background:#222; }
+
     .camera-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     .camera-row > * { margin:2px 0; }
   </style>
 
-  <!-- 正しい script タグ（CDN） -->
+  <!-- ✅ 正しい script タグ -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -77,7 +83,7 @@
 </header>
 
 <main>
-  <!-- 診断パネル（開始できない時のログ表示） -->
+  <!-- 診断パネル -->
   <section class="panel" id="diagPanel" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:6px; margin-bottom:10px;">
       <span style="font-size:12px; font-weight:bold;">診断情報（開始できない時はここを確認）</span>
@@ -111,7 +117,7 @@
       <div class="count-item"><span class="count-label">現人数</span><span class="count-value" id="currentInFrame">0</span></div>
     </div>
 
-    <!-- 属性集計カード（表示復活） -->
+    <!-- 属性集計カード -->
     <div class="attr-grid">
       <div class="attr-item"><span class="attr-label">推定：男性</span><span class="attr-value" id="attrMale">0</span></div>
       <div class="attr-item"><span class="attr-label">推定：女性</span><span class="attr-value" id="attrFemale">0</span></div>
@@ -151,12 +157,12 @@
         </select>
       </div>
       <div class="config-item">
-        <label>検知感度(Score): <span id="scoreVal">0.55</span></label>
-        <input type="range" id="scoreRange" min="0.2" max="0.9" step="0.05" value="0.55">
+        <label>検知感度(Score): <span id="scoreVal">0.50</span></label>
+        <input type="range" id="scoreRange" min="0.2" max="0.9" step="0.05" value="0.50">
       </div>
       <div class="config-item">
-        <label>解析FPS(間隔): <span id="fpsVal">10</span>fps</label>
-        <input type="range" id="fpsRange" min="1" max="30" step="1" value="10">
+        <label>解析FPS(間隔): <span id="fpsVal">12</span>fps</label>
+        <input type="range" id="fpsRange" min="1" max="30" step="1" value="12">
       </div>
       <div class="config-item">
         <label>中央ライン バンド幅(%)：<span id="bandVal">5</span></label>
@@ -167,7 +173,7 @@
         <input type="range" id="minVelRange" min="0.00" max="0.10" step="0.005" value="0.02">
       </div>
       <div class="config-item">
-        <label><input type="checkbox" id="strictToggle" checked> 厳密カウント（prevNX↔nx + 速度しきい値）</label>
+        <label><input type="checkbox" id="strictToggle"> 厳密カウント（prevNX↔nx + 速度しきい値）</label>
       </div>
       <div class="config-item">
         <label>追跡許容距離: <span id="distVal">0.15</span></label>
@@ -228,7 +234,7 @@ let attrStats = JSON.parse(localStorage.getItem('counter_attr')) || {
   male:0, female:0, unknown:0, child:0, youth:0, adult:0, senior:0
 };
 let human = null, humanReady = false;
-const ATTR_COUNT_MODE = "firstSeen";
+const ATTR_COUNT_MODE = "firstSeen"; // 初回検出時に属性加算
 
 let logs = JSON.parse(localStorage.getItem('counter_logs')) || [];
 let LOG_INTERVAL_MS = (parseFloat(localStorage.getItem('counter_log_interval_min')) || 2) * 60000;
@@ -329,7 +335,6 @@ window.addEventListener('DOMContentLoaded', async () => {
 /* ====== カメラ列挙 ====== */
 async function populateCamerasRobust(){
   try{
-    // 許可を先に取得（iOS/Androidでラベル解放）
     const tmp = await navigator.mediaDevices.getUserMedia({ video:true, audio:false });
     tmp.getTracks().forEach(t=>t.stop());
   }catch(e){ console.warn('初回許可取得に失敗（列挙は継続）:', e); }
@@ -398,13 +403,12 @@ async function startSystem(){
     document.getElementById('startBtn').disabled = true;
     document.getElementById('stopBtn').disabled  = false;
 
-    // 取得後に再列挙（ラベルが出る端末あり）
     try { await populateCamerasRobust(); } catch {}
 
   }catch(err){
     console.error('カメラ取得失敗:', err);
     await collectDiag(err);
-    alert('カメラを取得できませんでした。診断パネルをご確認ください。\nHTTPS・権限・他アプリ占有・facingMode設定・deviceId選択を見直してください。');
+    alert('カメラを取得できませんでした。診断パネルをご確認ください。');
   }
 }
 function stopSystem(restart=false){
@@ -416,18 +420,40 @@ function stopSystem(restart=false){
   document.getElementById('stopBtn').disabled  = true;
 }
 
-/* ====== Human（属性推定） ====== */
+/* ====== Human（mediapipe最適化＋再試行） ====== */
 async function initHuman(){
   if (humanReady) return;
   try{
-    const config = {
-      backend: tfBackend, filter:{enabled:true},
-      face:{ enabled:true, detector:{ model:'blazeface', minConfidence:0.5 }, mesh:{enabled:false}, description:{enabled:true}},
-      body:{enabled:false}, hand:{enabled:false}, gesture:{enabled:false}
+    const humanConfig = {
+      modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human@3.4.0/models', // CDN固定
+      backend: tfBackend,         // 'webgl' 既定
+      warmup: 'face',             // 先に顔をウォームアップ
+      filter: { enabled: true, size: 3, sigma: 1.5 }, // 軽い平滑化
+      cacheSensitivity: 0.5,      // 簡易キャッシュ
+      face: {
+        enabled: true,
+        detector: {
+          model: 'mediapipe',     // ★ mediapipe に切替
+          minConfidence: 0.5,
+          maxDetected: 5,
+          return: true
+        },
+        mesh: { enabled: false }, // コスト削減
+        description: { enabled: true }, // 年齢・性別
+        attention: { enabled: false }
+      },
+      body: { enabled: false },
+      hand: { enabled: false },
+      gesture: { enabled: false }
     };
-    human = new Human(config); await human.load();
-    humanReady = true; document.getElementById('attrStatus').textContent='ON';
-  }catch(e){ console.error('Human init error:', e); humanReady=false; document.getElementById('attrStatus').textContent='ERR'; }
+    human = new Human(humanConfig);
+    await human.load();
+    humanReady = true;
+    document.getElementById('attrStatus').textContent='ON';
+  }catch(e){
+    console.error('Human init error:', e);
+    humanReady=false; document.getElementById('attrStatus').textContent='ERR';
+  }
 }
 
 /* ====== 推論ループ ====== */
@@ -448,7 +474,7 @@ async function onFrame(now){
 }
 function onFrameRAF(now){ onFrame(now); rafId = requestAnimationFrame(onFrameRAF); }
 
-/* ====== マッチング/集計 ====== */
+/* ====== マッチング/集計（mediapipe対応の属性抽出＋再試行） ====== */
 function iou(b1,b2){
   const [x1,y1,w1,h1]=b1,[x2,y2,w2,h2]=b2;
   const xa=Math.max(x1,x2), ya=Math.max(y1,y2), xb=Math.min(x1+w1,x2+w2), yb=Math.min(y1+h1,y2+h2);
@@ -470,6 +496,40 @@ function extractAttr(face){
   return { gender, age:ageEst, bucket };
 }
 
+/* 顔→人物の割当（IoU＋中心距離の複合スコア） */
+function assignFaceToDetection(facesDet, people) {
+  const map = new Map();
+  if (!facesDet || !facesDet.face || !facesDet.face.length) return map;
+  for (const face of facesDet.face) {
+    const fb = face.box ? [face.box[0], face.box[1], face.box[2], face.box[3]] : null;
+    if (!fb) continue;
+    let bestIdx = -1, bestScore = -Infinity;
+    const fx = fb[0] + fb[2]/2, fy = fb[1] + fb[3]/2;
+    for (let i=0;i<people.length;i++){
+      const pb = people[i].bbox;
+      const px = pb[0] + pb[2]/2, py = pb[1] + pb[3]/2;
+      const ov = iou(fb, pb);
+      const dist = Math.hypot((fx-px), (fy-py));
+      const normDist = dist / Math.hypot(pb[2], pb[3] || 1);
+      const score = ov - (normDist * 0.2);
+      if (score > bestScore){ bestScore = score; bestIdx = i; }
+    }
+    if (bestIdx >= 0 && bestScore > 0.02) map.set(bestIdx, face);
+  }
+  return map;
+}
+
+/* 顔サイズしきい値（画面に対する割合） */
+function faceTooSmall(face, video) {
+  if (!face || !face.box) return true;
+  const area = face.box[2] * face.box[3];
+  const minArea = (video.videoWidth * video.videoHeight) * 0.01; // 最低1%面積
+  return area < minArea;
+}
+
+/* 属性再試行の最大回数 */
+const MAX_ATTR_TRIES = 12;
+
 function updateLogic(detections, thresh, facesDet){
   const mode = document.getElementById('modeSel').value;
   const stayTimeLimitMs = parseInt(document.getElementById('stayTimeRange').value)*1000;
@@ -480,26 +540,13 @@ function updateLogic(detections, thresh, facesDet){
   const people = detections.filter(d=>d.class==='person' && d.score>thresh);
   const unmatched = new Set(tracks.keys());
 
-  // 顔→人物割当
-  const faceMap = new Map();
-  if (facesDet?.face?.length){
-    for (const face of facesDet.face){
-      if (!face.box) continue;
-      let bestIdx=-1,bestOv=0;
-      for (let i=0;i<people.length;i++){
-        const ov = iou([face.box[0],face.box[1],face.box[2],face.box[3]], people[i].bbox);
-        if (ov>bestOv){ bestOv=ov; bestIdx=i; }
-      }
-      if (bestIdx>=0 && bestOv>0.05) faceMap.set(bestIdx, face);
-    }
-  }
+  const faceMap = assignFaceToDetection(facesDet, people);
 
   for (let idx=0; idx<people.length; idx++){
-    const d=people[idx];
-    const nx=(d.bbox[0]+d.bbox[2]/2)/video.videoWidth;
-    const ny=(d.bbox[1]+d.bbox[3]/2)/video.videoHeight;
+    const d = people[idx];
+    const nx = (d.bbox[0] + d.bbox[2]/2)/video.videoWidth;
+    const ny = (d.bbox[1] + d.bbox[3]/2)/video.videoHeight;
 
-    // マッチング
     let bestId=null, bestScore=-Infinity;
     for (const id of unmatched){
       const t=tracks.get(id);
@@ -511,13 +558,37 @@ function updateLogic(detections, thresh, facesDet){
 
     if (bestId!==null){
       const t=tracks.get(bestId);
-      const prevNX=t.nx, prevSide=sideOf(t.nx);
+      const prevNX=t.nx, prevSide = sideOf(t.nx);
       t.nx=nx; t.ny=ny;
       t.vel=((t.vel||0)*0.7) + ((nx - prevNX)*0.3);
       t.bbox=d.bbox; t.lastSeen=Date.now();
 
-      if (attrEnabled && faceMap.has(idx) && !t.attrFixed) t.attr=extractAttr(faceMap.get(idx));
+      // 属性更新（再試行ロジック）
+      if (attrEnabled && faceMap.has(idx) && !t.attrFixed) {
+        const f = faceMap.get(idx);
+        if (!faceTooSmall(f, video)) {
+          const cand = extractAttr(f);
+          // gender/age どちらかが有効なら採用
+          if (cand.gender !== 'unknown' || (cand.age !== undefined && !Number.isNaN(cand.age))) {
+            t.attr = cand;
+            applyAttrCountOnce(t);
+          } else {
+            // 再試行カウンタ
+            t.attrTries = (t.attrTries || 0) + 1;
+            if (t.attrTries > MAX_ATTR_TRIES) {
+              t.attr = { gender:'unknown', age:undefined, bucket:'unknown' };
+              t.attrFixed = true; // もう再試行しない
+              attrStats.unknown++; // 最終的に不明として加算（性別のみ）
+              localStorage.setItem('counter_attr', JSON.stringify(attrStats));
+            }
+          }
+        } else {
+          // 顔が小さすぎる → 次フレームで再試行
+          t.attrTries = (t.attrTries || 0) + 1;
+        }
+      }
 
+      // カウント判定
       if (!t.counted){
         let counted=false;
         if (mode==='midline'){
@@ -535,32 +606,39 @@ function updateLogic(detections, thresh, facesDet){
           if (!t.inArea && nowIn){ stats.L2R++; counted=true; t.inArea=true; }
           else if (t.inArea && !nowIn){ t.inArea=false; }
         }
-        if (counted){
-          t.counted=true;
-          if (ATTR_COUNT_MODE==="cross" && attrEnabled && t.attr && !t.attrFixed) applyAttrCount(t);
-        }
+        if (counted) t.counted=true;
       }
-      if (ATTR_COUNT_MODE==="firstSeen" && attrEnabled && t.attr && !t.attrFixed) applyAttrCount(t);
+
+      // 滞在
       if (!t.stayed && (Date.now()-t.startMs>stayTimeLimitMs)){ t.stayed=true; intervalStayers.add(t.id); }
       unmatched.delete(bestId);
     }else{
       const nt={ nx,ny,bbox:d.bbox,startMs:Date.now(),lastSeen:Date.now(), counted:false,stayed:false,inArea:false,vel:0,
-                 attr:{gender:'unknown',age:undefined,bucket:'unknown'}, attrFixed:false };
-      if (attrEnabled && faceMap.has(idx)) nt.attr=extractAttr(faceMap.get(idx));
+                 attr:{gender:'unknown',age:undefined,bucket:'unknown'}, attrFixed:false, attrTries:0 };
+      if (attrEnabled && faceMap.has(idx)) {
+        const f = faceMap.get(idx);
+        if (!faceTooSmall(f, video)) nt.attr = extractAttr(f);
+      }
       tracks.set(nextId++, nt);
-      if (ATTR_COUNT_MODE==="firstSeen" && attrEnabled) applyAttrCount(nt);
+      if (ATTR_COUNT_MODE==="firstSeen" && attrEnabled) applyAttrCountOnce(nt);
     }
   }
-  for (const id of unmatched){ if (Date.now()-tracks.get(id).lastSeen>3000) tracks.delete(id); }
+
+  for (const id of unmatched){ if (Date.now()-tracks.get(id).lastSeen > 3000) tracks.delete(id); }
   updateDisplay();
 }
 
-/* ====== 属性加算（一度だけ） ====== */
-function applyAttrCount(t){
+/* 属性加算(一度だけ) */
+function applyAttrCountOnce(t){
   if (!attrEnabled || t.attrFixed || !t.attr) return;
   const g=t.attr.gender||'unknown', b=t.attr.bucket||'unknown';
-  if (g==='male') attrStats.male++; else if (g==='female') attrStats.female++; else attrStats.unknown++;
-  if (b==='child') attrStats.child++; else if (b==='youth') attrStats.youth++; else if (b==='adult') attrStats.adult++; else if (b==='senior') attrStats.senior++;
+  if (g==='male') attrStats.male++;
+  else if (g==='female') attrStats.female++;
+  else attrStats.unknown++;
+  if (b==='child') attrStats.child++;
+  else if (b==='youth') attrStats.youth++;
+  else if (b==='adult') attrStats.adult++;
+  else if (b==='senior') attrStats.senior++;
   t.attrFixed=true; localStorage.setItem('counter_attr', JSON.stringify(attrStats));
 }
 
