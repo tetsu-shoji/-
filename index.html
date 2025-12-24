@@ -2,10 +2,10 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>通過カウンター Pro (表示切替版)</title>
+    <title>通過カウンター Pro (究極版)</title>
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <style>
-        :root { color-scheme: dark; }
+        :root { color-scheme: dark; --accent: #00e5ff; }
         body { font-family: system-ui, sans-serif; margin:0; background:#111; color:#eee; overflow: hidden; position: fixed; width: 100%; height: 100%; }
         header { padding: 10px 15px; background: #222; border-bottom: 1px solid #444; display: flex; justify-content: space-between; align-items: center; }
         main { padding: 10px; display: flex; flex-direction: column; gap: 10px; height: calc(100% - 60px); overflow-y: auto; }
@@ -14,8 +14,9 @@
         button, select, input { padding: 10px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: 13px; width: 100%; box-sizing: border-box; }
         button#startBtn { background: #28a745; border: none; font-weight: bold; }
         button#stopBtn { background: #dc3545; border: none; }
-        .config-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; padding: 10px; background: #252525; border-radius: 6px; }
-        .config-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+        .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .config-item { display: flex; flex-direction: column; gap: 4px; }
+        .config-item label { font-size: 11px; color: #aaa; }
         
         #wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444; touch-action: none; }
         video { width: 100%; height: 100%; object-fit: cover; transition: opacity 0.3s; }
@@ -26,6 +27,7 @@
         .count-label { font-size: 10px; color: #aaa; display: block; }
         .count-value { font-size: 20px; font-weight: bold; display: block; }
         .ok { color: #3fd88f; } .warn { color: #ffcc66; }
+        .small-btn { padding: 5px; font-size: 10px; background: #444; border: none; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
@@ -34,7 +36,7 @@
 <body>
 
 <header>
-    <span style="font-weight:bold; font-size:14px;">通過カウンター Pro</span>
+    <span style="font-weight:bold; font-size:14px;">通過カウンター Pro 2025</span>
     <span id="status" style="font-size:11px; color:#aaa;">モデル読込中...</span>
 </header>
 
@@ -45,45 +47,59 @@
             <button id="stopBtn" disabled>停止</button>
             <button id="exportExcelBtn">Excel</button>
         </div>
-
         <div id="wrap">
             <video id="video" autoplay playsinline muted></video>
             <canvas id="overlay"></canvas>
         </div>
-        <p style="font-size:10px; color:#888; margin:5px 0 0;">※ドラッグで検知エリアを自由に変更可能</p>
     </section>
 
     <section class="panel">
         <div class="count-grid">
             <div class="count-item"><span class="count-label">進/入</span><span class="count-value ok" id="liveL2R">0</span></div>
             <div class="count-item"><span class="count-label">退/出</span><span class="count-value ok" id="liveR2L">0</span></div>
-            <div class="count-item"><span class="count-label">滞在</span><span class="count-value warn" id="liveStayers">0</span></div>
+            <div class="count-item"><span class="count-label">滞在数</span><span class="count-value warn" id="liveStayers">0</span></div>
             <div class="count-item"><span class="count-label">現人数</span><span class="count-value" id="currentInFrame">0</span></div>
         </div>
     </section>
 
-    <section class="panel config-group">
-        <div class="config-row">
-            <label>表示モード:</label>
-            <select id="dispModeSel" style="width:60%;">
-                <option value="both">画像 ＋ 枠表示</option>
-                <option value="boxOnly">枠のみ (省電力/隠し)</option>
-                <option value="none">非表示 (バックグラウンド解析)</option>
-            </select>
+    <section class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:5px; margin-bottom:10px;">
+            <span style="font-size:12px; font-weight:bold;">詳細設定</span>
+            <button id="resetDataBtn" class="small-btn">データ初期化</button>
         </div>
-        <div class="config-row">
-            <label>検知モード:</label>
-            <select id="modeSel" style="width:60%;">
-                <option value="midline">中央ライン通過</option>
-                <option value="area">エリア指定進入</option>
-            </select>
-        </div>
-        <div class="config-row">
-            <label>滞在判定(秒): <span id="stayTimeVal">60</span></label>
-            <input type="range" id="stayTimeRange" min="10" max="300" step="10" value="60" style="width:60%;">
-        </div>
-        <div class="config-row">
-            <button id="resetDataBtn" style="background:#444; font-size:11px; padding:5px;">累積データ初期化</button>
+        
+        <div class="config-grid">
+            <div class="config-item">
+                <label>表示: <span id="vDisp">画像+枠</span></label>
+                <select id="dispModeSel">
+                    <option value="both">画像 ＋ 枠表示</option>
+                    <option value="boxOnly">枠のみ</option>
+                    <option value="none">非表示</option>
+                </select>
+            </div>
+            <div class="config-item">
+                <label>検知モード</label>
+                <select id="modeSel">
+                    <option value="midline">中央ライン</option>
+                    <option value="area">エリア指定</option>
+                </select>
+            </div>
+            <div class="config-item">
+                <label>検知感度(Score): <span id="scoreVal">0.5</span></label>
+                <input type="range" id="scoreRange" min="0.2" max="0.9" step="0.05" value="0.5">
+            </div>
+            <div class="config-item">
+                <label>解析FPS(間隔): <span id="fpsVal">10</span>fps</label>
+                <input type="range" id="fpsRange" min="1" max="30" step="1" value="10">
+            </div>
+            <div class="config-item">
+                <label>滞在判定: <span id="stayTimeVal">60</span>秒</label>
+                <input type="range" id="stayTimeRange" min="5" max="300" step="5" value="60">
+            </div>
+            <div class="config-item">
+                <label>追跡許容距離: <span id="distVal">0.15</span></label>
+                <input type="range" id="distRange" min="0.05" max="0.4" step="0.01" value="0.15">
+            </div>
         </div>
     </section>
 </main>
@@ -100,16 +116,16 @@ let lastProcessTime = 0;
 let roi = { x: 0.3, y: 0.3, w: 0.4, h: 0.4 };
 let isDragging = false;
 
-let stats = JSON.parse(localStorage.getItem('counter_stats')) || { L2R: 0, R2L: 0, history: [] };
+let stats = JSON.parse(localStorage.getItem('counter_stats')) || { L2R: 0, R2L: 0 };
 let intervalStayers = new Set();
 
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-        document.getElementById('status').textContent = '準備完了';
+        document.getElementById('status').textContent = 'READY';
         updateDisplay();
     } catch (e) {
-        document.getElementById('status').textContent = '読込失敗';
+        document.getElementById('status').textContent = 'ERR: MODEL LOAD';
     }
     initROIHandler();
 });
@@ -122,22 +138,25 @@ async function startSystem() {
         video.srcObject = stream;
         video.onloadedmetadata = () => {
             resize(); video.play(); running = true;
-            document.getElementById('status').textContent = '解析中...';
+            document.getElementById('status').textContent = 'RUNNING';
             requestAnimationFrame(mainLoop);
         };
         document.getElementById('startBtn').disabled = true;
         document.getElementById('stopBtn').disabled = false;
-    } catch (err) { alert("カメラエラー: 権限を確認してください"); }
+    } catch (err) { alert("カメラアクセスが拒否されました"); }
 }
 
 async function mainLoop(now) {
     if (!running) return;
 
-    if (now - lastProcessTime > 100) {
+    const fpsLimit = 1000 / parseInt(document.getElementById('fpsRange').value);
+    
+    if (now - lastProcessTime > fpsLimit) {
         lastProcessTime = now;
         tf.engine().startScope();
+        const scoreThresh = parseFloat(document.getElementById('scoreRange').value);
         const detections = await model.detect(video);
-        updateLogic(detections);
+        updateLogic(detections, scoreThresh);
         saveStats();
         tf.engine().endScope();
     }
@@ -146,10 +165,12 @@ async function mainLoop(now) {
     requestAnimationFrame(mainLoop);
 }
 
-function updateLogic(detections) {
+function updateLogic(detections, thresh) {
     const mode = document.getElementById('modeSel').value;
     const stayTimeLimitMs = parseInt(document.getElementById('stayTimeRange').value) * 1000;
-    const people = detections.filter(d => d.class === 'person' && d.score > 0.5);
+    const distLimit = parseFloat(document.getElementById('distRange').value);
+    
+    const people = detections.filter(d => d.class === 'person' && d.score > thresh);
     const unmatched = new Set(tracks.keys());
 
     for (const d of people) {
@@ -157,7 +178,7 @@ function updateLogic(detections) {
         const ny = (d.bbox[1] + d.bbox[3]/2) / video.videoHeight;
 
         let bestId = null;
-        let minDist = 0.15;
+        let minDist = distLimit;
 
         for (const id of unmatched) {
             const t = tracks.get(id);
@@ -198,39 +219,31 @@ function updateLogic(detections) {
 function drawOverlay() {
     const dMode = document.getElementById('dispModeSel').value;
     const mode = document.getElementById('modeSel').value;
-    
-    // 表示モードに応じたビデオの透明度
     video.style.opacity = (dMode === 'both') ? "1" : "0";
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (dMode === 'none') return; // 「非表示」なら描画しない
+    if (dMode === 'none') return;
 
-    // 補助線
     ctx.lineWidth = 2;
     if (mode === 'midline') {
-        ctx.strokeStyle = 'rgba(0, 229, 255, 0.6)';
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.5)';
         ctx.beginPath(); ctx.moveTo(canvas.width/2, 0); ctx.lineTo(canvas.width/2, canvas.height); ctx.stroke();
     } else {
-        ctx.strokeStyle = 'rgba(255, 204, 102, 0.6)';
+        ctx.strokeStyle = 'rgba(255, 204, 102, 0.5)';
         ctx.setLineDash([5, 5]);
         ctx.strokeRect(roi.x * canvas.width, roi.y * canvas.height, roi.w * canvas.width, roi.h * canvas.height);
         ctx.setLineDash([]);
     }
 
-    // 追跡枠
     for (const t of tracks.values()) {
         if (Date.now() - t.lastSeen > 500) continue;
         const [vx, vy, vw, vh] = t.bbox;
         const sx = canvas.width / video.videoWidth;
         const sy = canvas.height / video.videoHeight;
-        
         ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
         ctx.strokeRect(vx * sx, vy * sy, vw * sx, vh * sy);
-        
-        // IDラベル（枠のみ/画像ありの両方で表示）
         ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
         ctx.font = "10px sans-serif";
-        ctx.fillText(`ID:${t.id}`, vx * sx, vy * sy - 5);
+        ctx.fillText(`ID:${t.id} ${Math.floor((Date.now()-t.startMs)/1000)}s`, vx * sx, vy * sy - 5);
     }
 }
 
@@ -241,9 +254,7 @@ function updateDisplay() {
     document.getElementById('currentInFrame').textContent = Array.from(tracks.values()).filter(t => Date.now() - t.lastSeen < 500).length;
 }
 
-function saveStats() {
-    localStorage.setItem('counter_stats', JSON.stringify(stats));
-}
+function saveStats() { localStorage.setItem('counter_stats', JSON.stringify(stats)); }
 
 function initROIHandler() {
     let startX, startY;
@@ -251,16 +262,16 @@ function initROIHandler() {
         if (document.getElementById('modeSel').value !== 'area') return;
         isDragging = true;
         const rect = canvas.getBoundingClientRect();
-        startX = ((e.clientX || e.touches[0].clientX) - rect.left) / canvas.width;
-        startY = ((e.clientY || e.touches[0].clientY) - rect.top) / canvas.height;
+        startX = ((e.clientX || (e.touches && e.touches[0].clientX)) - rect.left) / canvas.width;
+        startY = ((e.clientY || (e.touches && e.touches[0].clientY)) - rect.top) / canvas.height;
     };
     const handleMove = (e) => {
         if (!isDragging) return;
         const rect = canvas.getBoundingClientRect();
-        let curX = ((e.clientX || e.touches[0].clientX) - rect.left) / canvas.width;
-        let curY = ((e.clientY || e.touches[0].clientY) - rect.top) / canvas.height;
-        roi.x = Math.min(startX, curX);
-        roi.y = Math.min(startY, curY);
+        let curX = ((e.clientX || (e.touches && e.touches[0].clientX)) - rect.left) / canvas.width;
+        let curY = ((e.clientY || (e.touches && e.touches[0].clientY)) - rect.top) / canvas.height;
+        roi.x = Math.max(0, Math.min(startX, curX));
+        roi.y = Math.max(0, Math.min(startY, curY));
         roi.w = Math.abs(curX - startX);
         roi.h = Math.abs(curY - startY);
     };
@@ -278,18 +289,16 @@ document.getElementById('stopBtn').onclick = () => {
     document.getElementById('startBtn').disabled = false; document.getElementById('stopBtn').disabled = true;
 };
 document.getElementById('resetDataBtn').onclick = () => {
-    if(confirm("データをリセットしますか？")) {
-        stats = { L2R: 0, R2L: 0, history: [] };
-        intervalStayers.clear();
-        saveStats(); updateDisplay();
+    if(confirm("全てのデータを消去します。")) {
+        stats = { L2R: 0, R2L: 0 }; intervalStayers.clear(); saveStats(); updateDisplay();
     }
 };
 document.getElementById('exportExcelBtn').onclick = () => {
-    const data = [{ "進/入": stats.L2R, "退/出": stats.R2L, "滞在検知累計": intervalStayers.size }];
+    const data = [{ "進入": stats.L2R, "退出": stats.R2L, "滞在検知計": intervalStayers.size }];
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `counter_${new Date().getTime()}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Log");
+    XLSX.writeFile(wb, `counter_report.xlsx`);
 };
 
 function resize() {
@@ -297,7 +306,15 @@ function resize() {
     canvas.height = document.getElementById('wrap').clientHeight;
 }
 window.onresize = resize;
-document.getElementById('stayTimeRange').oninput = (e) => document.getElementById('stayTimeVal').textContent = e.target.value;
+
+// スライダーの値表示更新
+const bindRange = (id, valId) => {
+    document.getElementById(id).oninput = (e) => document.getElementById(valId).textContent = e.target.value;
+};
+bindRange('scoreRange', 'scoreVal');
+bindRange('fpsRange', 'fpsVal');
+bindRange('stayTimeRange', 'stayTimeVal');
+bindRange('distRange', 'distVal');
 </script>
 </body>
 </html>
