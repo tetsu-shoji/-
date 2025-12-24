@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>通過カウンター Pro (機能拡張版)</title>
+    <title>通過カウンター Pro (シンプル軽量版)</title>
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <style>
         :root { color-scheme: dark; }
@@ -28,19 +28,17 @@
         .count-value { font-size: 26px; font-weight: bold; display: block; }
         .ok { color: #3fd88f; }
         .warn { color: #ffcc66; }
-        .chart-container { width: 100%; height: 200px; margin-top: 10px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
 <header>
     <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:bold;">通過カウンター Pro (グラフ統合版)</span>
-        <span id="status" style="font-size:11px; color:#aaa;">読込中...</span>
+        <span style="font-weight:bold;">通過カウンター Pro (シンプル)</span>
+        <span id="status" style="font-size:11px; color:#aaa;">モデル読込中...</span>
     </div>
 </header>
 
@@ -68,7 +66,11 @@
             <div class="config-row">
                 <label>表示設定 / 感度:</label>
                 <div style="display:flex; gap:5px; width:65%;">
-                    <select id="displayMode" style="padding:6px;"><option value="both">画像+枠</option><option value="boxOnly">枠のみ</option></select>
+                    <select id="displayMode" style="padding:6px;">
+                        <option value="both">画像＋枠</option>
+                        <option value="boxOnly">枠のみ</option>
+                        <option value="none">表示なし</option>
+                    </select>
                     <input type="number" id="thresholdInput" value="0.5" step="0.1" min="0.1" max="0.9" style="width:60px; padding:6px;">
                 </div>
             </div>
@@ -90,17 +92,10 @@
             <div class="count-item"><span class="count-label">現人数</span><span class="count-value" id="currentInFrame">0</span></div>
         </div>
     </section>
-
-    <section class="panel">
-        <label style="font-size:12px; color:#aaa;">統計グラフ (集計間隔:1分)</label>
-        <div class="chart-container">
-            <canvas id="statsChart"></canvas>
-        </div>
-    </section>
 </main>
 
 <script>
-let model, stream, running = false, chart;
+let model, stream, running = false;
 const video = document.getElementById('video');
 const canvas = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
@@ -110,51 +105,56 @@ let intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
 let lastAggTime = Date.now();
 const intervalHistory = [];
 
-// DOM elements for config
-const trackDistRange = document.getElementById('trackDistRange');
-const stayTimeRange = document.getElementById('stayTimeRange');
-
 window.addEventListener('DOMContentLoaded', async () => {
-    initChart();
-    model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-    document.getElementById('status').textContent = '準備完了';
+    try {
+        model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+        document.getElementById('status').textContent = '準備完了';
+    } catch (e) {
+        document.getElementById('status').textContent = 'モデル読込失敗';
+        console.error(e);
+    }
 });
 
-function initChart() {
-    const cctx = document.getElementById('statsChart').getContext('2d');
-    chart = new Chart(cctx, {
-        type: 'line',
-        data: { labels: [], datasets: [
-            { label: '進', borderColor: '#3fd88f', data: [], tension: 0.3 },
-            { label: '退', borderColor: '#00e5ff', data: [], tension: 0.3 },
-            { label: '滞在', borderColor: '#ffcc66', data: [], tension: 0.3 }
-        ]},
-        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
-    });
-}
-
 async function startSystem() {
-    stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "environment", width: { ideal: 640 } }, audio: false 
-    });
-    video.srcObject = stream;
-    video.onloadedmetadata = () => { resize(); updateUILayout(); };
-    await video.play();
-    running = true;
-    requestAnimationFrame(mainLoop);
-    document.getElementById('startBtn').disabled = true;
-    document.getElementById('stopBtn').disabled = false;
-    document.getElementById('exportExcelBtn').disabled = false;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment", width: { ideal: 640 } }, audio: false 
+        });
+        video.srcObject = stream;
+        
+        video.onloadedmetadata = () => {
+            resize();
+            updateUILayout();
+            video.play();
+            running = true;
+            document.getElementById('status').textContent = '解析中...';
+            requestAnimationFrame(mainLoop);
+        };
+        
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+        document.getElementById('exportExcelBtn').disabled = false;
+    } catch (err) {
+        alert("カメラの起動に失敗しました。設定を確認してください。");
+        console.error(err);
+    }
 }
 
 async function mainLoop() {
     if (!running) return;
-    const threshold = parseFloat(document.getElementById('thresholdInput').value);
     
-    // Memory management: Use tf.tidy to avoid leaks
-    const detections = await model.detect(video);
-    updateLogic(detections, threshold);
-    checkInterval();
+    // パフォーマンスと安定性のために tf.engine().startScope() を利用
+    tf.engine().startScope();
+    try {
+        const threshold = parseFloat(document.getElementById('thresholdInput').value);
+        const detections = await model.detect(video);
+        updateLogic(detections, threshold);
+        checkInterval();
+    } catch (e) {
+        console.error("ループエラー:", e);
+    }
+    tf.engine().endScope();
+    
     requestAnimationFrame(mainLoop);
 }
 
@@ -163,10 +163,13 @@ function updateLogic(detections, threshold) {
     const scaleY = canvas.height / video.videoHeight;
     const midX = canvas.width / 2;
     const mode = document.getElementById('modeSel').value;
-    const trackDistLimit = parseInt(trackDistRange.value);
-    const stayTimeLimitMs = parseInt(stayTimeRange.value) * 1000;
+    const dispMode = document.getElementById('displayMode').value;
+    const trackDistLimit = parseInt(document.getElementById('trackDistRange').value);
+    const stayTimeLimitMs = parseInt(document.getElementById('stayTimeRange').value) * 1000;
     
-    video.style.visibility = (document.getElementById('displayMode').value === 'both') ? 'visible' : 'hidden';
+    // 表示モードの制御
+    video.style.visibility = (dispMode === 'both') ? 'visible' : 'hidden';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const people = detections.filter(d => d.class === 'person' && d.score > threshold);
     const unmatched = new Set(tracks.keys());
@@ -214,38 +217,32 @@ function updateLogic(detections, threshold) {
 
     for (const id of unmatched) { if (Date.now() - tracks.get(id).lastSeen > 3000) tracks.delete(id); }
 
+    // 数値の更新
     document.getElementById('liveL2R').textContent = intervalStats.L2R;
     document.getElementById('liveR2R').textContent = intervalStats.R2L;
     document.getElementById('liveStayers').textContent = intervalStats.stayers.size;
     document.getElementById('currentInFrame').textContent = Array.from(tracks.values()).filter(t => Date.now() - t.lastSeen < 500).length;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const t of tracks.values()) {
-        if (Date.now() - t.lastSeen > 500) continue;
-        ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(...t.bbox);
-        ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
-        ctx.font = "bold 14px sans-serif";
-        ctx.fillText(`${t.stayed ? '滞在' : 'ID:'+t.id} (${Math.floor((Date.now()-t.startMs)/1000)}s)`, t.bbox[0], t.bbox[1]-8);
+    // 描画モードが none 以外なら枠を描画
+    if (dispMode !== 'none') {
+        for (const t of tracks.values()) {
+            if (Date.now() - t.lastSeen > 500) continue;
+            ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(...t.bbox);
+            ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
+            ctx.font = "bold 14px sans-serif";
+            ctx.fillText(`${t.stayed ? '滞在' : 'ID:'+t.id} (${Math.floor((Date.now()-t.startMs)/1000)}s)`, t.bbox[0], t.bbox[1]-8);
+        }
     }
 }
 
 function checkInterval() {
-    if (Date.now() - lastAggTime > 60000) { // 1分固定集計
+    if (Date.now() - lastAggTime > 60000) { 
         const now = new Date();
         const time = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
-        const entry = { time, l2r: intervalStats.L2R, r2l: intervalStats.R2L, stay: intervalStats.stayers.size };
-        intervalHistory.push(entry);
+        intervalHistory.push({ time, l2r: intervalStats.L2R, r2l: intervalStats.R2L, stay: intervalStats.stayers.size });
         
-        // Update Chart
-        chart.data.labels.push(time);
-        chart.data.datasets[0].data.push(entry.l2r);
-        chart.data.datasets[1].data.push(entry.r2l);
-        chart.data.datasets[2].data.push(entry.stay);
-        if(chart.data.labels.length > 20) { chart.data.labels.shift(); chart.data.datasets.forEach(d => d.data.shift()); }
-        chart.update();
-
         intervalStats = { L2R: 0, R2L: 0, stayers: new Set() };
         lastAggTime = Date.now();
     }
@@ -262,8 +259,11 @@ function updateUILayout() {
 
 document.getElementById('startBtn').onclick = startSystem;
 document.getElementById('stopBtn').onclick = () => {
-    running = false; if(stream) stream.getTracks().forEach(t => t.stop());
-    document.getElementById('startBtn').disabled = false; document.getElementById('stopBtn').disabled = true;
+    running = false; 
+    if(stream) stream.getTracks().forEach(t => t.stop());
+    document.getElementById('startBtn').disabled = false; 
+    document.getElementById('stopBtn').disabled = true;
+    document.getElementById('status').textContent = '停止中';
 };
 document.getElementById('exportExcelBtn').onclick = () => {
     const ws = XLSX.utils.json_to_sheet(intervalHistory);
@@ -276,9 +276,9 @@ function resize() {
     canvas.height = document.getElementById('wrap').clientHeight;
 }
 window.onresize = resize;
-trackDistRange.oninput = () => document.getElementById('trackDistVal').textContent = trackDistRange.value;
-stayTimeRange.oninput = () => document.getElementById('stayTimeVal').textContent = stayTimeRange.value;
-modeSel.onchange = updateUILayout;
+document.getElementById('trackDistRange').oninput = (e) => document.getElementById('trackDistVal').textContent = e.target.value;
+document.getElementById('stayTimeRange').oninput = (e) => document.getElementById('stayTimeVal').textContent = e.target.value;
+document.getElementById('modeSel').onchange = updateUILayout;
 </script>
 </body>
 </html>
