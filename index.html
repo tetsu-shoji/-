@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="utf-8" />
-    <title>通過カウンター Pro (完全版)</title>
+    <title>通過カウンター Pro (表示切替版)</title>
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <style>
         :root { color-scheme: dark; }
@@ -18,7 +18,7 @@
         .config-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
         
         #wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; overflow: hidden; border: 1px solid #444; touch-action: none; }
-        video { width: 100%; height: 100%; object-fit: cover; } /* スマホ対応: cover */
+        video { width: 100%; height: 100%; object-fit: cover; transition: opacity 0.3s; }
         canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 2; }
         
         .count-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
@@ -50,8 +50,7 @@
             <video id="video" autoplay playsinline muted></video>
             <canvas id="overlay"></canvas>
         </div>
-        
-        <p style="font-size:10px; color:#888; margin:5px 0 0;">※画面をドラッグして検知エリアを指定できます</p>
+        <p style="font-size:10px; color:#888; margin:5px 0 0;">※ドラッグで検知エリアを自由に変更可能</p>
     </section>
 
     <section class="panel">
@@ -65,10 +64,18 @@
 
     <section class="panel config-group">
         <div class="config-row">
-            <label>モード:</label>
+            <label>表示モード:</label>
+            <select id="dispModeSel" style="width:60%;">
+                <option value="both">画像 ＋ 枠表示</option>
+                <option value="boxOnly">枠のみ (省電力/隠し)</option>
+                <option value="none">非表示 (バックグラウンド解析)</option>
+            </select>
+        </div>
+        <div class="config-row">
+            <label>検知モード:</label>
             <select id="modeSel" style="width:60%;">
                 <option value="midline">中央ライン通過</option>
-                <option value="area">エリア進入</option>
+                <option value="area">エリア指定進入</option>
             </select>
         </div>
         <div class="config-row">
@@ -90,11 +97,9 @@ const tracks = new Map();
 let nextId = 1;
 let lastProcessTime = 0;
 
-// エリア指定用
-let roi = { x: 0.3, y: 0.3, w: 0.4, h: 0.4 }; // 割合で保持
+let roi = { x: 0.3, y: 0.3, w: 0.4, h: 0.4 };
 let isDragging = false;
 
-// 統計データ (LocalStorage対応)
 let stats = JSON.parse(localStorage.getItem('counter_stats')) || { L2R: 0, R2L: 0, history: [] };
 let intervalStayers = new Set();
 
@@ -116,21 +121,18 @@ async function startSystem() {
         });
         video.srcObject = stream;
         video.onloadedmetadata = () => {
-            resize();
-            video.play();
-            running = true;
+            resize(); video.play(); running = true;
             document.getElementById('status').textContent = '解析中...';
             requestAnimationFrame(mainLoop);
         };
         document.getElementById('startBtn').disabled = true;
         document.getElementById('stopBtn').disabled = false;
-    } catch (err) { alert("カメラエラー"); }
+    } catch (err) { alert("カメラエラー: 権限を確認してください"); }
 }
 
 async function mainLoop(now) {
     if (!running) return;
 
-    // 負荷軽減: 100ms(10fps)ごとに解析
     if (now - lastProcessTime > 100) {
         lastProcessTime = now;
         tf.engine().startScope();
@@ -151,12 +153,11 @@ function updateLogic(detections) {
     const unmatched = new Set(tracks.keys());
 
     for (const d of people) {
-        // 座標を 0.0~1.0 の正規化座標に変換して処理
         const nx = (d.bbox[0] + d.bbox[2]/2) / video.videoWidth;
         const ny = (d.bbox[1] + d.bbox[3]/2) / video.videoHeight;
 
         let bestId = null;
-        let minDist = 0.15; // 追跡距離しきい値(正規化座標)
+        let minDist = 0.15;
 
         for (const id of unmatched) {
             const t = tracks.get(id);
@@ -195,22 +196,28 @@ function updateLogic(detections) {
 }
 
 function drawOverlay() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const dMode = document.getElementById('dispModeSel').value;
     const mode = document.getElementById('modeSel').value;
+    
+    // 表示モードに応じたビデオの透明度
+    video.style.opacity = (dMode === 'both') ? "1" : "0";
 
-    // ガイドライン描画
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (dMode === 'none') return; // 「非表示」なら描画しない
+
+    // 補助線
     ctx.lineWidth = 2;
     if (mode === 'midline') {
-        ctx.strokeStyle = 'rgba(0, 229, 255, 0.8)';
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.6)';
         ctx.beginPath(); ctx.moveTo(canvas.width/2, 0); ctx.lineTo(canvas.width/2, canvas.height); ctx.stroke();
     } else {
-        ctx.strokeStyle = 'rgba(255, 204, 102, 0.8)';
+        ctx.strokeStyle = 'rgba(255, 204, 102, 0.6)';
         ctx.setLineDash([5, 5]);
         ctx.strokeRect(roi.x * canvas.width, roi.y * canvas.height, roi.w * canvas.width, roi.h * canvas.height);
         ctx.setLineDash([]);
     }
 
-    // 物体枠描画
+    // 追跡枠
     for (const t of tracks.values()) {
         if (Date.now() - t.lastSeen > 500) continue;
         const [vx, vy, vw, vh] = t.bbox;
@@ -219,6 +226,11 @@ function drawOverlay() {
         
         ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
         ctx.strokeRect(vx * sx, vy * sy, vw * sx, vh * sy);
+        
+        // IDラベル（枠のみ/画像ありの両方で表示）
+        ctx.fillStyle = t.stayed ? '#ffcc66' : '#00e5ff';
+        ctx.font = "10px sans-serif";
+        ctx.fillText(`ID:${t.id}`, vx * sx, vy * sy - 5);
     }
 }
 
@@ -233,10 +245,10 @@ function saveStats() {
     localStorage.setItem('counter_stats', JSON.stringify(stats));
 }
 
-// エリア指定（ドラッグ操作）
 function initROIHandler() {
     let startX, startY;
     const handleStart = (e) => {
+        if (document.getElementById('modeSel').value !== 'area') return;
         isDragging = true;
         const rect = canvas.getBoundingClientRect();
         startX = ((e.clientX || e.touches[0].clientX) - rect.left) / canvas.width;
@@ -266,7 +278,7 @@ document.getElementById('stopBtn').onclick = () => {
     document.getElementById('startBtn').disabled = false; document.getElementById('stopBtn').disabled = true;
 };
 document.getElementById('resetDataBtn').onclick = () => {
-    if(confirm("データを初期化しますか？")) {
+    if(confirm("データをリセットしますか？")) {
         stats = { L2R: 0, R2L: 0, history: [] };
         intervalStayers.clear();
         saveStats(); updateDisplay();
