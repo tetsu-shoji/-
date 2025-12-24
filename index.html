@@ -3,7 +3,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>通過カウンター Pro 2025（属性推定版）</title>
+  <title>通過カウンター Pro 2025（属性推定版・修正版）</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <style>
     :root { color-scheme: dark; --accent: #00e5ff; }
@@ -30,26 +30,20 @@
     .ok { color: #3fd88f; } .warn { color: #ffcc66; }
     .small-btn { padding: 5px; font-size: 10px; background: #444; border: none; }
 
-    /* 属性集計カード */
     .attr-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
     .attr-item { background: #252525; padding: 8px; border-radius: 6px; text-align: center; border: 1px solid #333; }
     .attr-label { font-size: 10px; color: #aaa; display: block; }
     .attr-value { font-size: 18px; font-weight: bold; display: block; }
 
-    /* テーブル */
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { border: 1px solid #333; padding: 6px; }
     thead tr { background: #222; }
   </style>
 
-  <!-- TensorFlow.js & COCO-SSD -->
+  <!-- ✅ 正しいスクリプトタグ -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
-
-  <!-- Excel出力 -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-  <!-- 属性推定ライブラリ（Human） -->
   <script src="https://cdn.jsdelivr.net/npm/@vladmandic/human@3.4.0/dist/human.js"></script>
 </head>
 <body>
@@ -67,7 +61,7 @@
 </header>
 
 <main>
-  <!-- 操作・表示 -->
+  <!-- 操作 -->
   <section class="panel">
     <div class="controls">
       <button id="startBtn">開始</button>
@@ -92,7 +86,6 @@
       <div class="count-item"><span class="count-label">現人数</span><span class="count-value" id="currentInFrame">0</span></div>
     </div>
 
-    <!-- 属性集計カード（ON時のみ増加） -->
     <div class="attr-grid">
       <div class="attr-item"><span class="attr-label">推定：男性</span><span class="attr-value" id="attrMale">0</span></div>
       <div class="attr-item"><span class="attr-label">推定：女性</span><span class="attr-value" id="attrFemale">0</span></div>
@@ -150,7 +143,7 @@
     </div>
   </section>
 
-  <!-- 集計表 -->
+  <!-- 集計表（最下段） -->
   <section class="panel">
     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:5px; margin-bottom:10px;">
       <span style="font-size:12px; font-weight:bold;">集計表（自動更新）</span>
@@ -186,7 +179,7 @@
 </main>
 
 <script>
-/* ========== グローバル ========== */
+/* ======================== グローバル設定 ======================== */
 let model, stream, running = false;
 const video = document.getElementById('video');
 const canvas = document.getElementById('overlay');
@@ -211,8 +204,10 @@ let attrStats = JSON.parse(localStorage.getItem('counter_attr')) || {
 };
 let human = null; // Humanインスタンス
 let humanReady = false;
+/* 属性カウントのタイミング: "cross"（通過時） or "firstSeen"（初回検出時） */
+const ATTR_COUNT_MODE = "cross";
 
-/* ログ */
+/* ログ関連 */
 let logs = JSON.parse(localStorage.getItem('counter_logs')) || [];
 let LOG_INTERVAL_MS = 120000; // 2分
 let logTimerId = null;
@@ -220,10 +215,10 @@ let logTimerId = null;
 /* バックエンド */
 let tfBackend = localStorage.getItem('tf_backend') || 'webgl';
 
-/* rVFC対応の可否 */
+/* rVFC対応可否 */
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
 
-/* ========== 初期化 ========== */
+/* ======================== 初期化 ======================== */
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     await tf.setBackend(tfBackend);
@@ -246,18 +241,18 @@ window.addEventListener('DOMContentLoaded', async () => {
   renderLogTable();
 });
 
-/* ========== Human（属性推定） ========== */
+/* ======================== Human（属性推定） ======================== */
 async function initHuman() {
   if (humanReady) return;
   try {
     const config = {
-      backend: tfBackend,    // tfjsのバックエンドに合わせる
+      backend: tfBackend,
       filter: { enabled: true },
       face: {
         enabled: true,
         detector: { model: 'blazeface', minConfidence: 0.5 },
         mesh: { enabled: false },
-        description: { enabled: true },   // 年齢/性別など
+        description: { enabled: true },   // 年齢/性別
         emotion: { enabled: false }
       },
       body: { enabled: false },
@@ -275,10 +270,9 @@ async function initHuman() {
   }
 }
 
-/* ========== カメラ ========== */
+/* ======================== カメラ ======================== */
 async function populateCameras() {
   try {
-    // 一度許可を取るとラベルが出る
     await navigator.mediaDevices.getUserMedia({ video: true, audio: false }).then(s => s.getTracks().forEach(t => t.stop()));
   } catch {}
   const devices = await navigator.mediaDevices.enumerateDevices();
@@ -300,7 +294,7 @@ async function startSystem() {
     video.onloadedmetadata = () => {
       resize(); video.play(); running = true;
       document.getElementById('status').textContent = 'RUNNING';
-      if (attrEnabled) initHuman();     // 属性ONならHuman初期化
+      if (attrEnabled) initHuman();
       startLogTimer();
       if (hasRVFC) vfcId = video.requestVideoFrameCallback(onFrame);
       else rafId = requestAnimationFrame(onFrameRAF);
@@ -320,7 +314,7 @@ function stopSystem(restart=false) {
   document.getElementById('stopBtn').disabled = true;
 }
 
-/* ========== 推論ループ ========== */
+/* ======================== 推論ループ ======================== */
 async function onFrame(now/*, metadata*/) {
   if (!running) return;
   const fpsLimit = 1000 / parseInt(document.getElementById('fpsRange').value);
@@ -330,9 +324,8 @@ async function onFrame(now/*, metadata*/) {
     const peopleDet = await model.detect(video);
     let facesDet = null;
 
-    // 属性ONなら顔検出（負荷軽減のため、人物が検出されたフレームのみ）
     if (attrEnabled && humanReady) {
-      facesDet = await human.detect(video); // detect()は内部でまとめて推論
+      facesDet = await human.detect(video);
     }
 
     updateLogic(peopleDet, scoreThresh, facesDet);
@@ -344,7 +337,7 @@ async function onFrame(now/*, metadata*/) {
 }
 function onFrameRAF(now) { onFrame(now); rafId = requestAnimationFrame(onFrameRAF); }
 
-/* ========== マッチング/集計ロジック ========== */
+/* ======================== マッチング/集計 ======================== */
 const CROSS_X = 0.5;     // 中央ライン
 const BAND = 0.05;       // ヒステリシス
 
@@ -359,34 +352,53 @@ function iou(b1, b2) {
 function sideOf(x) {
   if (x <= CROSS_X - BAND) return 'L';
   if (x >= CROSS_X + BAND) return 'R';
-  return 'C'; // dead zone
+  return 'C';
 }
-/* 顔→人物の紐付け（IoU最大の人物検出に割り当て） */
+
+/* 顔→人物の紐付け（IoU緩和） */
 function assignFaceToDetection(facesDet, people) {
-  const map = new Map(); // key: people index, value: face object
+  const map = new Map();
   if (!facesDet || !facesDet.face || !facesDet.face.length) return map;
   for (const face of facesDet.face) {
-    if (!face.box) continue;
-    const fb = [face.box[0], face.box[1], face.box[2], face.box[3]]; // x,y,w,h
+    const fb = face.box ? [face.box[0], face.box[1], face.box[2], face.box[3]] : null;
+    if (!fb) continue;
     let bestIdx = -1, bestOv = 0;
     for (let i = 0; i < people.length; i++) {
       const p = people[i];
-      const pb = p.bbox; // [x,y,w,h]
+      const pb = p.bbox;
       const ov = iou(fb, pb);
       if (ov > bestOv) { bestOv = ov; bestIdx = i; }
     }
-    if (bestIdx >= 0 && bestOv > 0.2) map.set(bestIdx, face);
+    if (bestIdx >= 0 && bestOv > 0.05) map.set(bestIdx, face); // ← 0.05 に緩和
   }
   return map;
 }
+
 /* 年齢層の区分 */
 function bucketAge(age) {
-  if (age === undefined || age === null) return 'unknown';
+  if (age === undefined || age === null || Number.isNaN(age)) return 'unknown';
   const a = Math.round(age);
   if (a <= 12) return 'child';
   if (a <= 29) return 'youth';
   if (a <= 64) return 'adult';
   return 'senior';
+}
+
+/* Humanの属性値を安全に抽出 */
+function extractAttr(face) {
+  // gender: "male" | "female" | undefined
+  let gender = 'unknown';
+  if (face.gender && typeof face.gender === 'string') {
+    gender = face.gender.toLowerCase();
+    if (gender !== 'male' && gender !== 'female') gender = 'unknown';
+  }
+  // age: number（推定年齢）
+  let ageEst = undefined;
+  if (typeof face.age === 'number') ageEst = face.age;
+  else if (typeof face.ageYears === 'number') ageEst = face.ageYears;
+
+  const bucket = bucketAge(ageEst);
+  return { gender, age: ageEst, bucket };
 }
 
 function updateLogic(detections, thresh, facesDet) {
@@ -409,7 +421,7 @@ function updateLogic(detections, thresh, facesDet) {
       const t = tracks.get(id);
       const dist = Math.hypot(nx - t.nx, ny - t.ny);
       const ov = iou(d.bbox, t.bbox);
-      const score = (1 - dist) + ov; // 距離＋IoU
+      const score = (1 - dist) + ov;
       if (dist <= distLimit && score > bestScore) { bestScore = score; bestId = id; }
     }
 
@@ -424,39 +436,49 @@ function updateLogic(detections, thresh, facesDet) {
       t.side = sideOf(nx);
       unmatched.delete(bestId);
 
-      // 顔属性の割り当て（属性ON時のみ／未決定なら更新）
-      if (attrEnabled && faceMap.has(idx)) {
-        const face = faceMap.get(idx);
-        if (!t.attrFixed) {
-          const gender = (face.gender && face.gender.length) ? face.gender[0].label : 'unknown';
-          const ageEst = face.age || undefined;
-          const bucket = bucketAge(ageEst);
-          t.attr = { gender, age: ageEst, bucket };
-          // ライブ表示用：固定は「カウント確定時」に行う
-        }
+      // 顔属性の割り当て（属性ON時のみ）
+      if (attrEnabled && faceMap.has(idx) && !t.attrFixed) {
+        t.attr = extractAttr(faceMap.get(idx));
       }
 
+      // カウント確定
+      const crossedL2R = (prevSide === 'L' && t.side === 'R');
+      const crossedR2L = (prevSide === 'R' && t.side === 'L');
+      const inROI = (x, y) => (x > roi.x && x < roi.x + roi.w && y > roi.y && y < roi.y + roi.h);
+
       if (!t.counted) {
-        if (mode === 'midline') {
-          if (prevSide === 'L' && t.side === 'R') { stats.L2R++; applyAttrCount(t); t.counted = true; }
-          else if (prevSide === 'R' && t.side === 'L') { stats.R2L++; applyAttrCount(t); t.counted = true; }
-        } else {
-          const inROI = (x, y) => (x > roi.x && x < roi.x + roi.w && y > roi.y && y < roi.y + roi.h);
+        let countedNow = false;
+        if (mode === 'midline' && crossedL2R) { stats.L2R++; countedNow = true; }
+        else if (mode === 'midline' && crossedR2L) { stats.R2L++; countedNow = true; }
+        else if (mode === 'area') {
           const nowIn = inROI(nx, ny);
-          if (!t.inArea && nowIn) { stats.L2R++; applyAttrCount(t); t.inArea = true; t.counted = true; }
-          else if (t.inArea && !nowIn) { stats.R2L++; /* 出域時はカウント済み */ t.inArea = false; }
+          if (!t.inArea && nowIn) { stats.L2R++; t.inArea = true; countedNow = true; } // 入域を「右から」にまとめて加算
+          else if (t.inArea && !nowIn) { t.inArea = false; } // 出域時は加算なし
         }
+        if (countedNow) { applyAttrCount(t); t.counted = true; }
       }
+
+      // 初回検出で属性を加算したい場合
+      if (ATTR_COUNT_MODE === "firstSeen" && !t.attrFixed && attrEnabled && t.attr && t.attr.gender) {
+        applyAttrCount(t);
+      }
+
       if (!t.stayed && (Date.now() - t.startMs > stayTimeLimitMs)) {
         t.stayed = true;
         intervalStayers.add(t.id);
       }
     } else {
-      tracks.set(nextId++, {
+      // 新規トラック
+      const baseAttr = (attrEnabled && faceMap.has(idx)) ? extractAttr(faceMap.get(idx)) : { gender:'unknown', age:undefined, bucket:'unknown' };
+      const newTrack = {
         nx, ny, bbox: d.bbox, startMs: Date.now(), lastSeen: Date.now(),
         counted: false, stayed: false, inArea: false, side: sideOf(nx),
-        vel: 0, attr: { gender: 'unknown', age: undefined, bucket: 'unknown' }, attrFixed: false
-      });
+        vel: 0, attr: baseAttr, attrFixed: false
+      };
+      tracks.set(nextId++, newTrack);
+
+      // 初回検出で属性を加算したい場合
+      if (ATTR_COUNT_MODE === "firstSeen" && attrEnabled) applyAttrCount(newTrack);
     }
   }
   for (const id of unmatched) {
@@ -465,11 +487,12 @@ function updateLogic(detections, thresh, facesDet) {
   updateDisplay();
 }
 
-/* 属性カウント（カウント確定時に一度だけ加算） */
+/* 属性カウント（重複防止のため一度だけ） */
 function applyAttrCount(t) {
-  if (!attrEnabled || t.attrFixed) return;
-  const g = (t.attr && t.attr.gender) ? t.attr.gender : 'unknown';
-  const b = (t.attr && t.attr.bucket) ? t.attr.bucket : 'unknown';
+  if (!attrEnabled || t.attrFixed || !t.attr) return;
+  const g = t.attr.gender || 'unknown';
+  const b = t.attr.bucket || 'unknown';
+
   if (g === 'male') attrStats.male++;
   else if (g === 'female') attrStats.female++;
   else attrStats.unknown++;
@@ -478,12 +501,13 @@ function applyAttrCount(t) {
   else if (b === 'youth') attrStats.youth++;
   else if (b === 'adult') attrStats.adult++;
   else if (b === 'senior') attrStats.senior++;
-  // unknownは男女だけに含める（年齢未知はカウントしない）
+  // 'unknown'年齢層は男女だけ加算（年齢層は加算しない）
+
   t.attrFixed = true;
   saveAttr();
 }
 
-/* ========== オーバレイ描画 ========== */
+/* ======================== オーバレイ描画 ======================== */
 function drawOverlay() {
   const dMode = document.getElementById('dispModeSel').value;
   const mode = document.getElementById('modeSel').value;
@@ -510,7 +534,6 @@ function drawOverlay() {
     ctx.strokeStyle = t.stayed ? '#ffcc66' : '#00e5ff';
     ctx.strokeRect(vx * sx, vy * sy, vw * sx, vh * sy);
 
-    // ラベル（ID + 秒 + 属性）
     const secs = Math.floor((Date.now()-t.startMs)/1000);
     let attrText = '';
     if (attrEnabled && t.attr) {
@@ -525,19 +548,17 @@ function drawOverlay() {
   }
 }
 
-/* ========== 表示更新 / 保存 ========== */
+/* ======================== 表示更新 / 保存 ======================== */
 function updateDisplay() {
   document.getElementById('liveL2R').textContent = stats.L2R;
   document.getElementById('liveR2L').textContent = stats.R2L;
   document.getElementById('liveStayers').textContent = intervalStayers.size;
 
-  // 現人数の閾値はFPSから動的に
   const fps = parseInt(document.getElementById('fpsRange').value);
   const aliveMs = Math.max(500, Math.floor((1000 / fps) * 2));
   document.getElementById('currentInFrame').textContent =
     Array.from(tracks.values()).filter(t => Date.now() - t.lastSeen < aliveMs).length;
 
-  // 属性表示
   document.getElementById('attrMale').textContent = attrStats.male;
   document.getElementById('attrFemale').textContent = attrStats.female;
   document.getElementById('attrUnknown').textContent = attrStats.unknown;
@@ -551,7 +572,7 @@ function updateDisplay() {
 function saveStats() { localStorage.setItem('counter_stats', JSON.stringify(stats)); }
 function saveAttr() { localStorage.setItem('counter_attr', JSON.stringify(attrStats)); }
 
-/* ========== ROIドラッグ ========== */
+/* ======================== ROIドラッグ ======================== */
 function initROIHandler() {
   let startX, startY;
   const handleStart = (e) => {
@@ -579,14 +600,13 @@ function initROIHandler() {
   window.addEventListener('touchend', () => { isDragging = false; persistSettings(); });
 }
 
-/* ========== レイアウト ========== */
+/* ======================== レイアウト ======================== */
 function resize() {
   canvas.width = document.getElementById('wrap').clientWidth;
   canvas.height = document.getElementById('wrap').clientHeight;
 }
 window.onresize = resize;
 
-/* スライダーの値表示更新 */
 function bindRange(id, valId) {
   document.getElementById(id).oninput = (e) => {
     document.getElementById(valId).textContent = e.target.value;
@@ -611,10 +631,10 @@ function restoreSettings() {
   const be = localStorage.getItem('counter_tf_backend'); if (be) tfBackend = be;
 }
 
-/* ========== ログ/集計表/Excel ========== */
+/* ======================== ログ/集計表/Excel ======================== */
 function snapshotLog() {
   const row = {
-    timestamp: new Date().toISOString(),                               // Excel左列
+    timestamp: new Date().toISOString(),
     mode: document.getElementById('modeSel').value,
     score: parseFloat(document.getElementById('scoreRange').value),
     fps: parseInt(document.getElementById('fpsRange').value),
@@ -667,7 +687,7 @@ function startLogTimer() {
 function stopLogTimer() { if (logTimerId) { clearInterval(logTimerId); logTimerId = null; } }
 
 document.getElementById('exportExcelBtn').onclick = () => {
-  snapshotLog(); // 直近状態も収集
+  snapshotLog();
   const output = logs.map(r => ({
     "時刻": new Date(r.timestamp).toLocaleString(),
     "右から": r.rightFrom,
@@ -693,10 +713,9 @@ document.getElementById('exportExcelBtn').onclick = () => {
   XLSX.writeFile(wb, `counter_report_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
-/* ========== ボタン/イベント ========== */
+/* ======================== ボタン/イベント ======================== */
 document.getElementById('startBtn').onclick = startSystem;
 document.getElementById('stopBtn').onclick = () => { stopSystem(false); };
-
 document.getElementById('resetDataBtn').onclick = () => {
   if (confirm("全てのデータを消去します。")) {
     stats = { L2R: 0, R2L: 0 };
@@ -709,31 +728,78 @@ document.getElementById('resetDataBtn').onclick = () => {
     document.getElementById('logInfo').textContent = '';
   }
 };
-
-/* 属性ON/OFF切替 */
+/* 属性ON/OFF */
 document.getElementById('attrToggle').onchange = async (e) => {
   attrEnabled = e.target.checked;
   localStorage.setItem('counter_attr_enabled', attrEnabled ? '1' : '0');
   document.getElementById('attrStatus').textContent = attrEnabled ? 'ON' : 'OFF';
   if (attrEnabled && !humanReady) await initHuman();
 };
-
-/* 起動時の属性ON/OFF復元 */
+/* 起動時復元 */
 attrEnabled = localStorage.getItem('counter_attr_enabled') === '1';
 document.getElementById('attrToggle').checked = attrEnabled;
-
-/* 表示モードの文言 */
+/* 表示モード */
 document.getElementById('dispModeSel').onchange = (e) => {
   const v = e.target.value;
   document.getElementById('vDisp').textContent = (v === 'both') ? '画像+枠' : (v === 'boxOnly' ? '枠のみ' : '非表示');
   persistSettings();
 };
 
-/* ========== ユーティリティ ========== */
-function cancelVideoFrameCallback(id) {
-  // Safariのためのpolyfill相当（存在しない場合は何もしない）
-  try { video.cancelVideoFrameCallback(id); } catch {}
+/* ======================== ユーティリティ ======================== */
+function updateDisplayMiniStatus() { /* 任意のデバッグ用 */ }
+function cancelVideoFrameCallback(id) { try { video.cancelVideoFrameCallback(id); } catch {} }
+
+/* ======================== 設定保存 ======================== */
+function persistSettings() {
+  localStorage.setItem('counter_roi', JSON.stringify(roi));
+  ['scoreRange','fpsRange','stayTimeRange','distRange','dispModeSel','modeSel','tf_backend']
+    .forEach(id => {
+      const val = (id === 'tf_backend') ? tfBackend : document.getElementById(id).value;
+      localStorage.setItem(`counter_${id}`, val);
+    });
 }
+function restoreSettings() {
+  ['scoreRange','fpsRange','stayTimeRange','distRange','dispModeSel','modeSel']
+    .forEach(id => {
+      const v = localStorage.getItem(`counter_${id}`); if (v !== null) document.getElementById(id).value = v;
+    });
+  const be = localStorage.getItem('counter_tf_backend'); if (be) tfBackend = be;
+}
+
+/* ======================== ROIドラッグ ======================== */
+function initROIHandler() {
+  let startX, startY;
+  const handleStart = (e) => {
+    if (document.getElementById('modeSel').value !== 'area') return;
+    isDragging = true;
+    const rect = canvas.getBoundingClientRect();
+    startX = ((e.clientX || (e.touches && e.touches[0].clientX)) - rect.left) / canvas.width;
+    startY = ((e.clientY || (e.touches && e.touches[0].clientY)) - rect.top) / canvas.height;
+  };
+  const handleMove = (e) => {
+    if (!isDragging) return;
+    const rect = canvas.getBoundingClientRect();
+    let curX = ((e.clientX || (e.touches && e.touches[0].clientX)) - rect.left) / canvas.width;
+    let curY = ((e.clientY || (e.touches && e.touches[0].clientY)) - rect.top) / canvas.height;
+    roi.x = Math.max(0, Math.min(startX, curX));
+    roi.y = Math.max(0, Math.min(startY, curY));
+    roi.w = Math.abs(curX - startX);
+    roi.h = Math.abs(curY - startY);
+  };
+  canvas.addEventListener('mousedown', handleStart);
+  canvas.addEventListener('touchstart', handleStart);
+  window.addEventListener('mousemove', handleMove);
+  window.addEventListener('touchmove', handleMove);
+  window.addEventListener('mouseup', () => { isDragging = false; persistSettings(); });
+  window.addEventListener('touchend', () => { isDragging = false; persistSettings(); });
+}
+
+/* ======================== レイアウト ======================== */
+function resize() {
+  canvas.width = document.getElementById('wrap').clientWidth;
+  canvas.height = document.getElementById('wrap').clientHeight;
+}
+window.onresize = resize;
 </script>
 </body>
 </html>
