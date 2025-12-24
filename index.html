@@ -3,7 +3,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>通過カウンター Pro 2025（属性＆グラフ対応）</title>
+  <title>通過カウンター Pro 2025（属性・モーダルグラフ・可変集計）</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <style>
     :root { color-scheme: dark; --accent: #00e5ff; }
@@ -11,10 +11,11 @@
     header { padding: 10px 15px; background: #222; border-bottom: 1px solid #444; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
     main   { padding: 10px; display: flex; flex-direction: column; gap: 10px; height: calc(100% - 60px); overflow-y: auto; }
     .panel { background: #1e1e1e; border-radius: 8px; padding: 12px; border: 1px solid #333; }
-    .controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+    .controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
     button, select, input { padding: 10px; border-radius: 6px; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: 13px; width: 100%; box-sizing: border-box; }
     button#startBtn { background: #28a745; border: none; font-weight: bold; }
     button#stopBtn  { background: #dc3545; border: none; }
+    button#showChartsBtn { background:#0078d4; border:none; }
     .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
     .config-item { display: flex; flex-direction: column; gap: 4px; }
     .config-item label { font-size: 11px; color: #aaa; }
@@ -39,13 +40,32 @@
     th, td { border: 1px solid #333; padding: 6px; }
     thead tr { background: #222; }
 
-    /* グラフレイアウト */
-    .charts { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
-    .chart-box { background: #252525; border: 1px solid #333; border-radius: 6px; padding: 8px; }
-    .chart-title { font-size: 12px; color: #aaa; margin-bottom: 6px; }
+    /* === Charts Modal === */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 999;
+      display: none;
+    }
+    .modal-panel {
+      position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(1000px, 95vw);
+      max-height: 85vh;
+      overflow-y: auto;
+      background: #1e1e1e; border: 1px solid #333; border-radius: 8px;
+      padding: 12px;
+    }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+    .modal-title { font-size:12px; font-weight:bold; }
+    .modal-close { background:#444; border:none; color:#eee; padding:6px 10px; border-radius:6px; cursor:pointer; }
+    .chart-holder { margin-bottom:12px; background:#252525; border:1px solid #333; border-radius:6px; padding:8px; }
+    .chart-holder .chart-title { font-size:12px; color:#aaa; margin-bottom:6px; }
+    canvas.chart-canvas { width:100%; height:220px; }
+    .show { display:block; }
   </style>
 
-  <!-- 正しいスクリプト読み込み -->
+  <!-- ライブラリ（正しいsrc形式） -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -77,13 +97,14 @@
       <button id="startBtn">開始</button>
       <button id="stopBtn" disabled>停止</button>
       <button id="exportExcelBtn">Excel</button>
+      <button id="showChartsBtn">グラフ表示</button>
     </div>
     <div id="wrap">
       <video id="video" autoplay playsinline muted></video>
       <canvas id="overlay"></canvas>
     </div>
     <small style="display:block; margin-top:6px; color:#aaa;">
-      ※端末内でのみ推論を行い、映像・画像は保存しません。属性推定を行う場合は現地掲示・同意取得・保存期間／削除手順に従って運用してください。[2](https://outlook.office365.com/owa/?ItemID=AQMkADUyODM5ZDA0LThjMDQtNDE2MC1iZThlLWY3MDNhYjYwZjhmNQBGAAADy3dmpGFMUkKMSdvOLMGbewcAcJ%2fnfPi56kKLUw4V2L9xXgAAAgEJAAAAcJ%2fnfPi56kKLUw4V2L9xXgADRlVOYwAAAA%3d%3d&exvsurl=1&viewmodel=ReadMessageItem)
+      ※端末内でのみ推論を行い、映像・画像は保存しません。属性推定を行う場合は現地掲示・同意取得・保存期間／削除手順に従って運用してください。
     </small>
   </section>
 
@@ -154,28 +175,6 @@
     </div>
   </section>
 
-  <!-- グラフ -->
-  <section class="panel">
-    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:5px; margin-bottom:10px;">
-      <span style="font-size:12px; font-weight:bold;">グラフ表示</span>
-      <span id="chartInfo" style="font-size:11px; color:#aaa;"></span>
-    </div>
-    <div class="charts">
-      <div class="chart-box">
-        <div class="chart-title">時系列（右から／左から／滞在）</div>
-        <canvas id="chartTrend" height="160"></canvas>
-      </div>
-      <div class="chart-box">
-        <div class="chart-title">属性（男女）</div>
-        <canvas id="chartGender" height="160"></canvas>
-      </div>
-      <div class="chart-box">
-        <div class="chart-title">属性（年齢層）</div>
-        <canvas id="chartAge" height="160"></canvas>
-      </div>
-    </div>
-  </section>
-
   <!-- 集計表 -->
   <section class="panel">
     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:5px; margin-bottom:10px;">
@@ -211,6 +210,28 @@
   </section>
 </main>
 
+<!-- グラフ・モーダル（必要時のみ表示） -->
+<div id="chartsModal" class="modal-backdrop">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <span class="modal-title">グラフ（時系列／男女／年齢層）</span>
+      <button class="modal-close" id="chartsCloseBtn">閉じる</button>
+    </div>
+    <div class="chart-holder">
+      <div class="chart-title">時系列（右から／左から／滞在）</div>
+      <canvas id="chartTrend" class="chart-canvas"></canvas>
+    </div>
+    <div class="chart-holder">
+      <div class="chart-title">属性（男女）</div>
+      <canvas id="chartGender" class="chart-canvas"></canvas>
+    </div>
+    <div class="chart-holder">
+      <div class="chart-title">属性（年齢層）</div>
+      <canvas id="chartAge" class="chart-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ======================== グローバル設定 ======================== */
 let model, stream, running = false;
@@ -238,18 +259,16 @@ let attrStats = JSON.parse(localStorage.getItem('counter_attr')) || {
 let human = null;
 let humanReady = false;
 
-/* 属性カウントのタイミング */
+/* 属性カウントのタイミング（初回検出） */
 const ATTR_COUNT_MODE = "firstSeen";
 
-/* ログ関連：集計間隔をUIで変更可能 */
+/* ログ関連：集計間隔（分）をUIで変更可能 */
 let logs = JSON.parse(localStorage.getItem('counter_logs')) || [];
 let LOG_INTERVAL_MS = (parseFloat(localStorage.getItem('counter_log_interval_min')) || 2) * 60000;
 let logTimerId = null;
 
 /* バックエンド */
 let tfBackend = localStorage.getItem('tf_backend') || 'webgl';
-
-/* rVFC対応可否 */
 const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
 
 /* ======================== 初期化 ======================== */
@@ -271,19 +290,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindRange('stayTimeRange', 'stayTimeVal');
   bindRange('distRange', 'distVal');
   restoreSettings();
-  // 集計間隔UI初期値
   document.getElementById('logIntervalMin').value = (LOG_INTERVAL_MS / 60000).toString();
   document.getElementById('logIntervalMin').onchange = () => {
     const m = Math.max(0.5, Math.min(60, parseFloat(document.getElementById('logIntervalMin').value)));
     LOG_INTERVAL_MS = m * 60000;
     localStorage.setItem('counter_log_interval_min', m.toString());
     if (running) { stopLogTimer(); startLogTimer(); }
-    document.getElementById('chartInfo').textContent = `集計間隔：${m} 分`;
   };
   await populateCameras();
   renderLogTable();
-  initCharts();
-  updateCharts();
 });
 
 /* ======================== Human（属性推定） ======================== */
@@ -343,7 +358,6 @@ async function startSystem() {
       startLogTimer();
       if (hasRVFC) vfcId = video.requestVideoFrameCallback(onFrame);
       else rafId = requestAnimationFrame(onFrameRAF);
-      document.getElementById('chartInfo').textContent = `集計間隔：${(LOG_INTERVAL_MS/60000)} 分`;
     };
     document.getElementById('startBtn').disabled = true;
     document.getElementById('stopBtn').disabled  = false;
@@ -627,6 +641,7 @@ function resize() {
   canvas.height = document.getElementById('wrap').clientHeight;
 }
 window.onresize = resize;
+
 function bindRange(id, valId) {
   document.getElementById(id).oninput = (e) => {
     document.getElementById(valId).textContent = e.target.value;
@@ -668,7 +683,6 @@ function snapshotLog() {
   logs.push(row);
   localStorage.setItem('counter_logs', JSON.stringify(logs));
   renderLogTable();
-  updateCharts();
   document.getElementById('logInfo').textContent = `最終更新: ${new Date().toLocaleString()}`;
 }
 function renderLogTable() {
@@ -732,68 +746,74 @@ document.getElementById('exportExcelBtn').onclick = () => {
   XLSX.writeFile(wb, `counter_report_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
-/* ======================== グラフ（Chart.js） ======================== */
-let trendChart, genderChart, ageChart;
+/* ======================== モーダル・グラフ（必要時のみ） ======================== */
+let trendChart=null, genderChart=null, ageChart=null;
 
-function initCharts() {
+function buildCharts() {
   const trendCtx  = document.getElementById('chartTrend').getContext('2d');
   const genderCtx = document.getElementById('chartGender').getContext('2d');
   const ageCtx    = document.getElementById('chartAge').getContext('2d');
 
-  trendChart = new Chart(trendCtx, {
-    type: 'line',
-    data: {
-      labels: [], // 時刻
-      datasets: [
-        { label: '右から', data: [], borderColor: '#3fd88f', backgroundColor: 'rgba(63,216,143,0.15)', tension: 0.2 },
-        { label: '左から', data: [], borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.15)', tension: 0.2 },
-        { label: '滞在',   data: [], borderColor: '#ffcc66', backgroundColor: 'rgba(255,204,102,0.15)', tension: 0.2 }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#eee' } } },
-      scales: {
-        x: { ticks: { color: '#eee' }, grid: { color: '#333' } },
-        y: { ticks: { color: '#eee' }, grid: { color: '#333' }, beginAtZero: true }
-      }
-    }
-  });
-
-  genderChart = new Chart(genderCtx, {
-    type: 'doughnut',
-    data: { labels: ['男性','女性','不明'], datasets: [{ data: [0,0,0], backgroundColor: ['#4db6ac','#f06292','#757575'] }] },
-    options: { plugins: { legend: { labels: { color: '#eee' } } } }
-  });
-
-  ageChart = new Chart(ageCtx, {
-    type: 'doughnut',
-    data: { labels: ['子ども','若年','成人','高齢'], datasets: [{ data: [0,0,0,0], backgroundColor: ['#64b5f6','#81c784','#ffd54f','#ba68c8'] }] },
-    options: { plugins: { legend: { labels: { color: '#eee' } } } }
-  });
-}
-
-function updateCharts() {
-  // 時系列（累計の推移）
   const labels     = logs.map(r => new Date(r.timestamp).toLocaleTimeString());
   const rightData  = logs.map(r => r.rightFrom);
   const leftData   = logs.map(r => r.leftFrom);
   const stayData   = logs.map(r => r.stayers);
 
-  trendChart.data.labels = labels;
-  trendChart.data.datasets[0].data = rightData;
-  trendChart.data.datasets[1].data = leftData;
-  trendChart.data.datasets[2].data = stayData;
-  trendChart.update();
+  trendChart = new Chart(trendCtx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label:'右から', data:rightData, borderColor:'#3fd88f', backgroundColor:'rgba(63,216,143,0.15)', tension:0.2 },
+        { label:'左から', data:leftData, borderColor:'#00e5ff', backgroundColor:'rgba(0,229,255,0.15)', tension:0.2 },
+        { label:'滞在',   data:stayData, borderColor:'#ffcc66', backgroundColor:'rgba(255,204,102,0.15)', tension:0.2 }
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ labels:{ color:'#eee' } } },
+      scales:{ x:{ ticks:{ color:'#eee' }, grid:{ color:'#333' } },
+               y:{ ticks:{ color:'#eee' }, grid:{ color:'#333' }, beginAtZero:true } }
+    }
+  });
 
-  // 属性（累計）
-  genderChart.data.datasets[0].data = [attrStats.male, attrStats.female, attrStats.unknown];
-  genderChart.update();
+  genderChart = new Chart(genderCtx, {
+    type:'doughnut',
+    data:{ labels:['男性','女性','不明'],
+           datasets:[{ data:[attrStats.male, attrStats.female, attrStats.unknown],
+                       backgroundColor:['#4db6ac','#f06292','#757575'] }] },
+    options:{ plugins:{ legend:{ labels:{ color:'#eee' } } } }
+  });
 
-  ageChart.data.datasets[0].data = [attrStats.child, attrStats.youth, attrStats.adult, attrStats.senior];
-  ageChart.update();
+  ageChart = new Chart(ageCtx, {
+    type:'doughnut',
+    data:{ labels:['子ども','若年','成人','高齢'],
+           datasets:[{ data:[attrStats.child, attrStats.youth, attrStats.adult, attrStats.senior],
+                       backgroundColor:['#64b5f6','#81c784','#ffd54f','#ba68c8'] }] },
+    options:{ plugins:{ legend:{ labels:{ color:'#eee' } } } }
+  });
 }
+
+function destroyCharts() {
+  [trendChart, genderChart, ageChart].forEach(c => { try { c && c.destroy(); } catch{} });
+  trendChart = genderChart = ageChart = null;
+}
+function openChartsModal() {
+  const modal = document.getElementById('chartsModal');
+  destroyCharts();  // 重なり防止
+  modal.classList.add('show');
+  setTimeout(buildCharts, 50); // レイアウト確定後に描画
+}
+function closeChartsModal() {
+  const modal = document.getElementById('chartsModal');
+  destroyCharts();
+  modal.classList.remove('show');
+}
+document.getElementById('showChartsBtn').onclick = openChartsModal;
+document.getElementById('chartsCloseBtn').onclick = closeChartsModal;
+document.getElementById('chartsModal').addEventListener('click', (e) => {
+  if (e.target.id === 'chartsModal') closeChartsModal();
+});
 
 /* ======================== ボタン/イベント ======================== */
 document.getElementById('startBtn').onclick = startSystem;
@@ -807,7 +827,6 @@ document.getElementById('resetDataBtn').onclick = () => {
     saveStats(); saveAttr();
     localStorage.setItem('counter_logs', JSON.stringify(logs));
     updateDisplay(); renderLogTable();
-    updateCharts();
     document.getElementById('logInfo').textContent = '';
   }
 };
